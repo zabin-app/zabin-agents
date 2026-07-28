@@ -20,11 +20,11 @@ If `workingBranch` is missing or `tasks` is empty, do nothing and report "Need w
 ## Complexity → model tier
 
 ```
-low    -> claude-haiku-4.5
-medium -> claude-sonnet-5
-high   -> claude-opus-4.8
+low    -> gpt-5.6-luna
+medium -> gpt-5.6-terra
+high   -> gpt-5.6-sol
 ```
-Default to `claude-sonnet-5` if a task's complexity is missing/unrecognized.
+Default to `gpt-5.6-terra` if a task's complexity is missing/unrecognized.
 
 ## Procedure
 
@@ -49,7 +49,7 @@ For each successfully created worktree, dispatch:
 
 ```
 delegate(source: <task.agentType, default "implementor">,
-  provider: "github_copilot",
+  provider: "chatgpt_codex",
   model: <MODEL_FOR[task.complexity]>,
   instructions: "Implement task from: <task.path>
 
@@ -83,8 +83,8 @@ For each task whose implementor result has `status: "Done"`, dispatch from that 
 
 ```
 delegate(source: "task_validator",
-  provider: "github_copilot",
-  model: "claude-haiku-4.5",
+  provider: "chatgpt_codex",
+  model: "gpt-5.6-luna",
   instructions: "Validate implementation of: <task.path>
 
 Diff command: git diff <workingBranch>..<impl.branch>

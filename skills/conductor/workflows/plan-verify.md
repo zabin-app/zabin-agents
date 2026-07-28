@@ -22,12 +22,12 @@ The conductor issues one `delegate` call per assumption directly from the main l
 For each assumption:
 
 ```
-delegate(source: <agentType, default "codebase_researcher">, provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: <agentType, default "codebase_researcher">, provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Try to REFUTE this assumption: \"<claim>\"\nInspect the actual code/docs. Default to refuted=true if you cannot confirm it with concrete evidence. Return JSON matching the Verdict Schema.",
   async: true)
 ```
 
-Skeptics run on the workhorse tier (`claude-sonnet-5`) — verification is where capability matters, so this stage is never the cheap tier.
+Skeptics run on the workhorse tier (`gpt-5.6-terra`) — verification is where capability matters, so this stage is never the cheap tier.
 
 **Verdict Schema:**
 ```json

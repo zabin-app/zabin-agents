@@ -25,7 +25,7 @@ This runbook is executed by the conductor issuing `delegate` calls directly from
 For each question in `questions`, issue:
 
 ```
-delegate(source: <agentType>, provider: "github_copilot", model: "claude-haiku-4.5",
+delegate(source: <agentType>, provider: "chatgpt_codex", model: "gpt-5.6-luna",
   instructions: "<q>\n\nReturn a precise, evidence-backed finding. If the answer cannot be located, set found=false rather than guessing. Mark a claim loadBearing only if a plan built on it would change were the claim false. Structure your final answer as JSON matching the Finding Schema below.",
   async: true)
 ```
@@ -55,7 +55,7 @@ Dispatch all questions' delegate calls together, then `load(source: "<task_id>")
 For each finding where `found=true`, collect its claims where `loadBearing=true`. For each such claim, issue **2** parallel skeptic delegations:
 
 ```
-delegate(source: <same agentType as the research question>, provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: <same agentType as the research question>, provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Try to REFUTE this claim against the actual codebase/docs: \"<claim>\"\nEvidence offered: <evidence>\nDefault to refuted=true if you cannot confirm it with concrete evidence. Return JSON matching the Verdict Schema.",
   async: true)
 ```

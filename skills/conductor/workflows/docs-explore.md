@@ -23,7 +23,7 @@ Executed by the conductor (or the `docs-sync` skill acting as conductor) issuing
 For each subsystem, dispatch:
 
 ```
-delegate(source: "codebase_researcher", provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: "codebase_researcher", provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Explore the subsystem at `<path>` (<label>) and produce a COMPACT, architecture-altitude map of it.
 
 Capture: its responsibility, the handful of key modules (one line each — not every file), what it depends on, its central public types, and its high-level data flows. Note any build/run/test commands and coding conventions you observe under devSignals (those feed other docs, not ARCHITECTURE).
@@ -62,7 +62,7 @@ Stay at map altitude: describe the SHAPE, not the implementation. Do NOT enumera
 For each subsystem's returned map, dispatch a trim pass:
 
 ```
-delegate(source: none, provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: none, provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Here is a draft architecture map for subsystem \"<label>\":
 
 <map JSON>

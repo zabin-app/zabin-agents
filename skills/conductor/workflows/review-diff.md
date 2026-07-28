@@ -23,13 +23,13 @@ Dimensions map to review agent types. Every delegate call must carry an explicit
 
 | Dimension key | agentType | model |
 |---|---|---|
-| `architecture` | `architecture_enforcer` | `claude-sonnet-5` |
-| `quality` | `code_quality_inspector` | `claude-sonnet-5` |
-| `logic` | `logic_reasoning_checker` | `claude-opus-4.8` |
-| `risks` | `risks_tradeoffs_analyzer` | `claude-sonnet-5` |
-| `security` | `security_reviewer` | `claude-opus-4.8` |
+| `architecture` | `architecture_enforcer` | `gpt-5.6-terra` |
+| `quality` | `code_quality_inspector` | `gpt-5.6-terra` |
+| `logic` | `logic_reasoning_checker` | `gpt-5.6-sol` |
+| `risks` | `risks_tradeoffs_analyzer` | `gpt-5.6-terra` |
+| `security` | `security_reviewer` | `gpt-5.6-sol` |
 
-If `changeType == "bug"`, prepend: `bugfix` → `bug_fix_reviewer` → `claude-sonnet-5`.
+If `changeType == "bug"`, prepend: `bugfix` → `bug_fix_reviewer` → `gpt-5.6-terra`.
 
 ## Procedure
 
@@ -40,7 +40,7 @@ Executed by the conductor issuing `delegate` calls directly from the main loop �
 For each dimension `d`, dispatch:
 
 ```
-delegate(source: d.agentType, provider: "github_copilot", model: d.model,
+delegate(source: d.agentType, provider: "chatgpt_codex", model: d.model,
   instructions: "Review the following code change as your dimension (<d.key>).
 
 Diff range: git diff <diffRange>
@@ -78,7 +78,7 @@ Dispatch all dimensions' delegate calls together (they are independent reads ove
 For each dimension's review, split its findings into `blocking` (Critical or Major) and `minors` (Minor). If no blocking findings, that dimension contributes 0 confirmed findings (just the minors). Otherwise, for **each** blocking finding, dispatch **3 parallel** refuter delegates:
 
 ```
-delegate(source: none, provider: "github_copilot", model: "claude-haiku-4.5",
+delegate(source: none, provider: "chatgpt_codex", model: "gpt-5.6-luna",
   instructions: "A <d.key> reviewer flagged this <severity> finding on diff `<diffRange>`:
 
 Title: <title>

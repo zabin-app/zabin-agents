@@ -49,7 +49,7 @@ Classify the request: **feature**, **bug**, **refactor**, or **research-only**. 
 
 1. **Enumerate research questions**, each tagged with a researcher type (`codebase_researcher` / `external_researcher` / `git_historian`).
 2. **Scale the research:**
-   - 1–2 well-scoped questions → `delegate` those researcher agent types directly (issue each call from the main loop, `model: claude-haiku-4.5` — see *Model strategy*), then `load` each result.
+   - 1–2 well-scoped questions → `delegate` those researcher agent types directly (issue each call from the main loop, `model: gpt-5.6-luna` — see *Model strategy*), then `load` each result.
    - 3+ questions, unknown affected area, or load-bearing assumptions → follow `~/.agents/skills/conductor/workflows/research-sweep.md` with `questions: [{label, agentType, q}]`. Persist its synthesis to `workflow/plans/<type>/<name>/research/RESEARCH.md`.
 3. **Draft** `PLAN.md` (features) or `BUG.md` (bugs) from **verified** findings only. Refuted, contested, and unverifiable claims go in the plan's **Edge Cases & Risks** section, never the body. Use [templates.md](templates.md).
 4. **Verify (large/risky plans):** extract the plan's factual assumptions and follow `~/.agents/skills/conductor/workflows/plan-verify.md` with `assumptions: [{label, agentType, claim}]`. Fix every refuted assumption before presenting.
@@ -91,7 +91,7 @@ Per wave:
              complexity: "medium", agentType: "implementor" }, ...]
    ```
    Before delegating, create one branch and one `git worktree` per task from `WORKING_BRANCH`, record each worktree path, and pass it as that delegate's `working_dir`. This implements each task in an isolated worktree (model per `complexity`), validates each immediately with `task_validator`, and returns `[{slug, branch, status, verdict, files, docUpdatesNeeded, notes}]`. **The runbook does not merge.** You issue each implementor and validator call directly.
-3. **Sequential sub-group → dispatch `implementor` subagents one at a time in the main loop** (NOT as a worktree-parallel batch — they mutate `WORKING_BRANCH`, which must not race). Use the same dispatch/validate logic per task: `delegate(source: "implementor", provider: "github_copilot", model: <complexity tier>, working_dir: <repo path>, async: true)`, wait via `load(source: "<task_id>")`, commit source only (`git add --all -- . ':!workflow/plans/'`), then `delegate(source: "task_validator", provider: "github_copilot", model: "claude-haiku-4.5", working_dir: <repo path>, async: true)` to check `git diff <pre-task-commit>..HEAD`.
+3. **Sequential sub-group → dispatch `implementor` subagents one at a time in the main loop** (NOT as a worktree-parallel batch — they mutate `WORKING_BRANCH`, which must not race). Use the same dispatch/validate logic per task: `delegate(source: "implementor", provider: "chatgpt_codex", model: <complexity tier>, working_dir: <repo path>, async: true)`, wait via `load(source: "<task_id>")`, commit source only (`git add --all -- . ':!workflow/plans/'`), then `delegate(source: "task_validator", provider: "chatgpt_codex", model: "gpt-5.6-luna", working_dir: <repo path>, async: true)` to check `git diff <pre-task-commit>..HEAD`.
 4. **Assess verdicts** (runbook results + sequential validators):
    - All PASS → merge.
    - Any CONCERN → log it in `TASKS.md`, proceed to merge.
@@ -106,12 +106,12 @@ Per wave:
    For failed tasks, remove the worktree but retain its branch for inspection; do not run `git branch -D`. Run `git worktree prune` after cleanup. (Sequential tasks already committed in place — nothing to merge.) **Worktree creation, merging, and cleanup always happen here in the main loop — never inside a delegated subagent.**
 6. **Integration-verify** every wave that merged ≥1 worktree branch:
    ```
-   delegate(source: "integration_verifier", provider: "github_copilot", model: "claude-sonnet-5",
+   delegate(source: "integration_verifier", provider: "chatgpt_codex", model: "gpt-5.6-terra",
      instructions: "Verify merged wave <N>. Diff range: <WAVE_BASE>..HEAD. Run build/test/lint from docs/DEVELOPMENT.md; classify any failure.",
      working_dir: "<repo path>", async: true)
    ```
    FAIL → pause, mark the implicated task `⚠️ Blocked`, fix forward (re-dispatch at one model tier higher) — never silently roll back.
-7. **Doc updates:** if any task's `docUpdatesNeeded` is set (and no `doc_maintainer` task was planned), `delegate(source: "doc_maintainer", provider: "github_copilot", model: "claude-sonnet-5", working_dir: <repo path>, async: true)` for the core-doc edits, then validate. Sequential, not parallel with the next wave.
+7. **Doc updates:** if any task's `docUpdatesNeeded` is set (and no `doc_maintainer` task was planned), `delegate(source: "doc_maintainer", provider: "chatgpt_codex", model: "gpt-5.6-terra", working_dir: <repo path>, async: true)` for the core-doc edits, then validate. Sequential, not parallel with the next wave.
 8. **Update `TASKS.md`** after every wave (`[x]` done, blocked reasons). Proceed to the next wave only with no blockers.
 
 ## State 5 — Review
@@ -176,11 +176,11 @@ Executing a round:
 
 | Rating | Model | Criteria |
 |--------|-------|----------|
-| `low` | claude-haiku-4.5 | Mechanical 1–3 file edits following an existing pattern verbatim; no new logic/design. |
-| `medium` | claude-sonnet-5 | Standard feature work in one module; clear specs, typical refactors. The default. |
-| `high` | claude-opus-4.8 | Novel algorithms, concurrency, cross-cutting refactors, intricate state, subtle correctness. |
+| `low` | gpt-5.6-luna | Mechanical 1–3 file edits following an existing pattern verbatim; no new logic/design. |
+| `medium` | gpt-5.6-terra | Standard feature work in one module; clear specs, typical refactors. The default. |
+| `high` | gpt-5.6-sol | Novel algorithms, concurrency, cross-cutting refactors, intricate state, subtle correctness. |
 
-Rate honestly: a `low` task writing 4+ files or adding abstractions isn't `low`. Missing rating → estimate it, default `medium`. **Escalation:** when re-dispatching a task that failed validation or integration, bump one tier (`claude-haiku-4.5`→`claude-sonnet-5`→`claude-opus-4.8`).
+Rate honestly: a `low` task writing 4+ files or adding abstractions isn't `low`. Missing rating → estimate it, default `medium`. **Escalation:** when re-dispatching a task that failed validation or integration, bump one tier (`gpt-5.6-luna`→`gpt-5.6-terra`→`gpt-5.6-sol`).
 
 ## File Overlap Analysis (required for every TASKS.md)
 
@@ -188,15 +188,15 @@ For each task list **Files Modified (Write)** and read-only deps separately. For
 
 ## Model strategy (the fleet)
 
-Cheap-first-pass + adversarial verify. **Every `delegate` call must pass an explicit `model`** — a subagent dispatched without one inherits the session model, which is never what you want for fan-out work. Use these exact GitHub Copilot model IDs on every `delegate(..., provider: "github_copilot", model: <id>)` call; the runbooks encode these tiers per stage.
+Cheap-first-pass + adversarial verify. **Every `delegate` call must pass an explicit `model`** — a subagent dispatched without one inherits the session model, which is never what you want for fan-out work. Use these exact ChatGPT Codex model IDs on every `delegate(..., provider: "chatgpt_codex", model: <id>)` call; the runbooks encode these tiers per stage.
 
 | Tier | Model ID | Use for |
 |------|----------|---------|
-| **Cheap** | `claude-haiku-4.5` | Broad/mechanical generation: researchers (`codebase_researcher`, `external_researcher`, `git_historian`), `task_validator`, `low`-complexity implementors, and the finding-refute voters in `review-diff`. Always adversarially checked. |
-| **Workhorse** | `claude-sonnet-5` | Most implementation (`medium` complexity), `integration_verifier`, `doc_maintainer`, the architecture/quality/risks/bugfix review dimensions, and research-claim verifiers. The default when unsure. |
-| **Deep** | `claude-opus-4.8` | `high`-complexity implementors and the deepest-reasoning reviewers (`logic_reasoning_checker`, `security_reviewer`). You (the conductor) run on the session model. |
+| **Cheap** | `gpt-5.6-luna` | Broad/mechanical generation: researchers (`codebase_researcher`, `external_researcher`, `git_historian`), `task_validator`, `low`-complexity implementors, and the finding-refute voters in `review-diff`. Always adversarially checked. |
+| **Workhorse** | `gpt-5.6-terra` | Most implementation (`medium` complexity), `integration_verifier`, `doc_maintainer`, the architecture/quality/risks/bugfix review dimensions, and research-claim verifiers. The default when unsure. |
+| **Deep** | `gpt-5.6-sol` | `high`-complexity implementors and the deepest-reasoning reviewers (`logic_reasoning_checker`, `security_reviewer`). You (the conductor) run on the session model. |
 
-Context can raise a tier (e.g. a researcher on a gnarly concurrency question → `claude-sonnet-5`; a re-dispatch after failure → one tier up), never lower it below the table's default for that role.
+Context can raise a tier (e.g. a researcher on a gnarly concurrency question → `gpt-5.6-terra`; a re-dispatch after failure → one tier up), never lower it below the table's default for that role.
 
 ## Hard rules
 

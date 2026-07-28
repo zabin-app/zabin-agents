@@ -40,7 +40,7 @@ It returns `{ maps: [...compact per-subsystem maps...], recommendedStructure: "f
 Dispatch `doc_maintainer` (it enforces the budgets, content boundaries, altitude, present-tense, and no-duplication rules). Give it the maps as the source material, not the old doc text:
 
 ```
-delegate(source: "doc_maintainer", provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: "doc_maintainer", provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Rebuild <docs/ARCHITECTURE.md | the hub-and-spoke set> from these verified subsystem maps:
 <paste the relevant docs-explore maps>
 

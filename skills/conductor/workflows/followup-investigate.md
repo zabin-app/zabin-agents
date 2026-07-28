@@ -23,7 +23,7 @@ Executed by the conductor issuing `delegate` calls directly from the main loop.
 For each issue, dispatch:
 
 ```
-delegate(source: "codebase_researcher", provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: "codebase_researcher", provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "Investigate this code-review finding and locate its root cause:
 
 <issue.text>
@@ -51,7 +51,7 @@ Dispatch all issues' investigate delegate calls in parallel, then `load(source: 
 For each issue whose diagnosis has `confirmed: true`, dispatch:
 
 ```
-delegate(source: "codebase_researcher", provider: "github_copilot", model: "claude-sonnet-5",
+delegate(source: "codebase_researcher", provider: "chatgpt_codex", model: "gpt-5.6-terra",
   instructions: "A diagnosis claims the root cause of \"<issue.label>\" is: <rootCause> with fix: <fixApproach>. Try to REFUTE it — is the root cause correct, and would the fix be complete without regressions? Default refuted=true if unconvinced. Return JSON matching the Verdict Schema.",
   async: true)
 ```
