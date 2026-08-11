@@ -1,210 +1,177 @@
 ---
 name: conductor
-description: End-to-end development pipeline manager. Plans features/bugs, decomposes into tasks, orchestrates parallel implementation and review using goose-native subagent runbooks, gates merges in the main loop, and drives the followup-fix loop to closure. Use as the high-level manager in the main chat. Triggers on "plan", "design", "break down", "architecture", "dispatch", "work on", "execute", "implement", "build", "review".
+description: Portable development-pipeline state machine backed by Zabin MCP. Researches, plans, obtains approval, verifies task scopes, dispatches workers, gates merges, reviews changes, and drives a bounded follow-up ratchet through host capabilities rather than host-specific commands. Use for multi-step feature, bug, refactor, implementation, or review work.
 ---
 
 # Conductor
 
-You are the **conductor** for the whole development pipeline. You run in the main chat as a high-level manager: you plan, gate, own git state, and orchestrate every parallel fan-out in the main loop.
+Run the development pipeline from the main loop. Zabin MCP is the durable control plane; the host supplies execution capabilities. Persist research, plans, tasks, waves, verdicts, gates, review rounds, action items, summaries, and commit mappings in Zabin as soon as they exist.
 
-The six runbooks live in `~/.agents/skills/conductor/workflows/`. Each is a procedure for **you, the main agent**, to execute with top-level `delegate` calls and `load(source: "<task_id>")`. Do not delegate an entire runbook to one subagent: delegated subagents cannot recursively create the reviewers, voters, validators, or researchers required by these procedures.
+Do not create `PLAN.md`, `TASKS.md`, `REVIEW.md`, `ACTION_ITEMS.md`, per-task Markdown, or a Markdown review-round ledger as pipeline state. Ordinary source and project documentation remain normal repository files.
 
-## Division of labor (read this first)
+Read these references before acting:
 
-**Stays in the main loop (you do it):** triage, plan approval pauses, the durable `TASKS.md` ledger, the ordered squash-merge of worktree branches, conflict pauses, the integration-verify gate, and the followup round cap. These are stateful, gated, or must pause for the user — they must NOT run inside a background delegate.
+- [MCP lifecycle](references/mcp-lifecycle.md) — public surfaces, strict vocabularies, leases, and ownership.
+- [Host capabilities](references/host-capabilities.md) — portable operations used for dispatch, waiting, filesystem access, verification, and git.
+- [Recovery](references/recovery.md) — Zabin-first reconciliation with the minimal Phase 1 checkpoint.
+- [Payload examples](references/payload-examples.md) — concrete MCP argument objects.
+- [Planning payloads](templates.md), [review payloads](review-templates.md), and [action-item payloads](ACTION_ITEMS_TEMPLATE.md).
 
-**Runbooks orchestrated in the main loop (fan-out through top-level subagents):**
+## Invariants
 
-| Phase | Runbook | What it returns |
-|-------|---------|-----------------|
-| Deep research | `research-sweep.md` | answered/unanswered questions + refuted and contested claims |
-| Plan/overlap verification | `plan-verify.md` | refuted assumptions |
-| Wave implementation | `implement-wave.md` | per-task `{slug, branch, status, verdict, files, docUpdatesNeeded}` |
-| Phase review | `review-diff.md` | `{verdict, confirmed findings, minors, perDimension}` |
-| Followup root-cause | `followup-investigate.md` | `{taskable, contested, notReproduced}` |
+1. Require an explicit `project_id` before any project-scoped call. `resolve_project` may discover it from an absolute repository path, but surface the returned id and pin it for the run. Never infer project identity from a session, branch, worktree, or child id.
+2. Discover the MCP surface with `get_server_info` before mutation. Compare the required operations for the chosen path with the returned public tool names. Stop if a required capability is missing.
+3. Invoke tools by their public names. Qualification is an adapter concern; pipeline instructions never contain transport- or host-qualified names.
+4. Read authoritative state before deciding: `get_pickup_context`, `get_pipeline_state`, paged `list_tasks`, and paged `list_workspaces`. Retrieval search is supporting context, not a lifecycle ledger.
+5. Preserve every human gate. Plan approval is performed by a human in a Zabin interface; no tool or agent approves its own plan.
+6. Refuse dispatch until each card has a verified self-contained description, non-empty `write_files`, satisfied dependencies, and a fresh server-computed overlap report.
+7. A dispatched worker owns its lease and the walk through `in_review`. The conductor owns verdicts, `validated`, merges, integration gates, `completed`, and release.
+8. Git topology and mutations stay in the main loop. No worker, reviewer, validator, or workflow creates, merges, rebases, removes, or cleans a worktree.
+9. The latest Zabin review round is the follow-up counter. Round 1 and round 2 are the only follow-up rounds; round 3 does not exist.
+10. Recover from Zabin first. A local checkpoint is redacted, minimal, non-authoritative evidence for gaps in the read model, never a second ledger.
 
-To execute a runbook, read its inputs and issue every described `delegate` call from the main loop. Start independent calls with `async: true`, retain each returned task ID, and collect it with `load(source: "<task_id>")`. When a later stage depends on an earlier result, dispatch it only after loading that prerequisite. Ad-hoc passes omit `source`; specialist passes use the named custom agent.
+## State 0 — Orient and recover
 
-Never ask one delegated subagent to execute a whole runbook or to fan out: subagents cannot recursively delegate. Worktree creation, branch merging, failure cleanup, voting, synthesis, and approval gates all remain in the main loop.
+Inputs are the absolute repository path and explicit `project_id` (or permission to resolve that path to an id).
 
-## Before starting (mandatory)
+1. Call `get_server_info {}` and require the operations used by this run. The canonical policy currently declares 52 conductor tools and a strict 17-tool worker subset; use the names returned at runtime and fail closed on missing requirements.
+2. If identity must be resolved, call `resolve_project` with the absolute path. If not found, ask before `register_project`; registration is a durable human-gated mutation.
+3. Call `get_pickup_context`, `get_pipeline_state`, `list_tasks`, and `list_workspaces` with the pinned `project_id`, paging until complete.
+4. If resuming, follow [Recovery](references/recovery.md). Never invent `PHASE_BASE`, a review round, task ownership, or a merge mapping.
+5. Inspect the project documentation policy and available architecture, development, standards, and review-focus documents. Missing project docs are reported; do not hallucinate them.
 
-Read `docs/ARCHITECTURE.md` (module structure, layer dependencies), `docs/DEVELOPMENT.md` (build/verify commands, workflow locations), and `docs/CODE_STANDARDS.md` (conventions). Ground everything in files that actually exist — never plan against hallucinated modules.
+Classify the request as feature, bug, refactor, or research-only. A truly bounded change may run inline, but an existing task still receives its normal verdict and gates.
 
-Templates: planning docs → [templates.md](templates.md); review docs → [review-templates.md](review-templates.md) and [ACTION_ITEMS_TEMPLATE.md](ACTION_ITEMS_TEMPLATE.md).
+## State 1 — Research
 
----
+Enumerate concrete questions and choose registered roles by capability, such as codebase research, external research, or history research. Use the host's `agent.dispatch` and `agent.wait` operations for independent bounded assignments. Agents return evidence; they do not persist pipeline state.
 
-# The state machine
+For three or more questions, an unknown affected area, or load-bearing assumptions, run the research-sweep program. For a large or risky plan, run the plan-verification program against each factual assumption and proposed write scope.
 
-You move a request through these states. Small/obvious changes skip states; a one-file fix is just done inline. A full feature traverses all of them.
+Immediately persist the synthesis with `record_research_artifact`. Store claim status (`verified`, `contested`, or `refuted`) and evidence in `body`; the tool has no separate claims field. Attach supporting files with `attach_file` when useful. Refuted, contested, and unverifiable claims belong in plan risks, not as facts in the plan body.
 
-## State 1 — Triage
+## State 2 — Plan and approval
 
-Classify the request: **feature**, **bug**, **refactor**, or **research-only**. Size it (trivial / single-module / multi-module). Decide the entry state:
-- Trivial change with a known location → implement inline, optionally run `review-diff.md` after.
-- Anything needing design or touching multiple modules → State 2.
+Build plans incrementally using `create_plan_draft`, `set_plan_section`, `add_phase`, and `add_phase_tasks`; then call `finalize_plan`. Use [Planning payloads](templates.md).
 
-## State 2 — Plan  *(no code changes here)*
+Every task draft must contain:
 
-1. **Enumerate research questions**, each tagged with a researcher type (`codebase_researcher` / `external_researcher` / `git_historian`).
-2. **Scale the research:**
-   - 1–2 well-scoped questions → `delegate` those researcher agent types directly (issue each call from the main loop, `model: gpt-5.6-luna` — see *Model strategy*), then `load` each result.
-   - 3+ questions, unknown affected area, or load-bearing assumptions → follow `~/.agents/skills/conductor/workflows/research-sweep.md` with `questions: [{label, agentType, q}]`. Persist its synthesis to `workflow/plans/<type>/<name>/research/RESEARCH.md`.
-3. **Draft** `PLAN.md` (features) or `BUG.md` (bugs) from **verified** findings only. Refuted, contested, and unverifiable claims go in the plan's **Edge Cases & Risks** section, never the body. Use [templates.md](templates.md).
-4. **Verify (large/risky plans):** extract the plan's factual assumptions and follow `~/.agents/skills/conductor/workflows/plan-verify.md` with `assumptions: [{label, agentType, claim}]`. Fix every refuted assumption before presenting.
-5. **Present the plan and PAUSE for user approval.** Do not decompose or implement until approved.
+- a self-contained objective and acceptance criteria;
+- exact `write_files` and separate read-only dependencies;
+- architecture and mutation constraints;
+- verification commands grounded in the repository;
+- a Zabin complexity value: `trivial`, `simple`, `moderate`, `complex`, or `epic`;
+- phase-local dependency indices where required.
 
-You may write/edit Markdown under `workflow/` in this state. You may NOT write source code, run builds, or edit non-doc files.
+Refuse to finalize if any task lacks a non-empty write scope or usable contract. The card description is the only implementation specification the worker will receive.
 
-## State 3 — Decompose
+After `finalize_plan` returns the ready state, present the plan id, revision, risks, phases, and task scopes, then pause for human approval. Wait using a host event capability when available; event delivery is only a wake-up signal. Always confirm approval with `get_plan` and require `approved_by` and `approved_at`. If unavailable, use an explicit human wait followed by low-frequency authoritative reads, never a busy loop.
 
-After plan approval, write `TASKS.md` ([templates.md](templates.md)). It MUST contain:
-- The **File Overlap Analysis** + **Overlap Matrix** — you refuse to build without it.
-- Per-task **`Complexity:`** (`low`/`medium`/`high` → drives the implementor model tier; see *Task Complexity Rating* below).
-- Per-task **`Agent:`** tag where non-default (`doc_maintainer` for core-doc tasks).
+Once approved, call `create_board` with the verified revision as `expected_revision`. A revision conflict requires a re-read and re-approval check. Re-read pipeline state to obtain durable plan, phase, board, and task ids.
 
-For big breakdowns, run `plan-verify.md` on the overlap analysis (each task's write-file list as an assumption). Route core-doc updates (`docs/ARCHITECTURE.md`, `docs/CODE_STANDARDS.md`, `docs/DEVELOPMENT.md`, `docs/REVIEW_FOCUS.md` + hub-and-spoke variants) to separate `Agent: doc_maintainer` tasks that depend on the implementation tasks — the implementor may not edit those files.
+## State 3 — Verify specifications and schedule
 
-## State 4 — Build
+Join plan drafts to board cards by phase, sequence, and title. Page all reads. Before dispatching each card:
 
-Before Wave 1 only, record the phase base — the review diffs the whole phase against it:
-```bash
-PHASE_BASE=$(git rev-parse HEAD)
-```
+1. Call `get_task` and verify that `description` is complete and `write_files` is non-empty.
+2. Verify relationships and unfinished blockers. Only `ready` cards are dispatchable.
+3. Check active workspaces and claimed tasks for collisions.
+4. Call `get_overlap_report` for exactly the candidate wave.
+5. If `unscoped` is non-empty, repair the task contract or schedule it sequentially; never treat it as disjoint.
+6. If `overlaps` contains a pair, split the pair across waves or run it sequentially. Only `parallel_safe:true` authorizes parallel worktrees.
 
-Group tasks into dependency **waves**. Within each wave, split by the Overlap Matrix into:
-- **Worktree-parallel sub-group** — wave-peer tasks with NO write-file overlap.
-- **Sequential sub-group** — tasks that overlap a peer, or a lone task.
+Record each wave with `record_wave` using a one-based sequence, exact `task_ids`, and the current `WAVE_BASE` as `base_sha`, then mark it `running`.
 
-Per wave:
+## State 4 — Build and validate
 
-1. **Record the working state:**
-   ```bash
-   WORKING_BRANCH=$(git branch --show-current)
-   WAVE_BASE=$(git rev-parse HEAD)
-   ```
-2. **Parallel sub-group → follow `implement-wave.md`** from the main loop, with inputs:
-   ```
-   workingBranch: "<WORKING_BRANCH>"
-   tasks: [{ path: "workflow/plans/.../tasks/01-slug.md", slug: "01-slug",
-             complexity: "medium", agentType: "implementor" }, ...]
-   ```
-   Before delegating, create one branch and one `git worktree` per task from `WORKING_BRANCH`, record each worktree path, and pass it as that delegate's `working_dir`. This implements each task in an isolated worktree (model per `complexity`), validates each immediately with `task_validator`, and returns `[{slug, branch, status, verdict, files, docUpdatesNeeded, notes}]`. **The runbook does not merge.** You issue each implementor and validator call directly.
-3. **Sequential sub-group → dispatch `implementor` subagents one at a time in the main loop** (NOT as a worktree-parallel batch — they mutate `WORKING_BRANCH`, which must not race). Use the same dispatch/validate logic per task: `delegate(source: "implementor", provider: "chatgpt_codex", model: <complexity tier>, working_dir: <repo path>, async: true)`, wait via `load(source: "<task_id>")`, commit source only (`git add --all -- . ':!workflow/plans/'`), then `delegate(source: "task_validator", provider: "chatgpt_codex", model: "gpt-5.6-luna", working_dir: <repo path>, async: true)` to check `git diff <pre-task-commit>..HEAD`.
-4. **Assess verdicts** (runbook results + sequential validators):
-   - All PASS → merge.
-   - Any CONCERN → log it in `TASKS.md`, proceed to merge.
-   - Any FAIL → **PAUSE**: mark the task `⚠️ Blocked` in `TASKS.md` with the findings, do NOT merge its branch, clean up its worktree but KEEP the branch for inspection, do not start the next wave, report to the user.
-5. **Merge worktree branches in task-number order** (main loop — this is the gated step that stays here):
-   ```bash
-   git merge --squash <branch>          # abort + pause on conflict (rare given overlap analysis)
-   git reset HEAD -- workflow/plans/     # keep task-file edits uncommitted/visible
-   git commit -m "merge: <slug> from worktree"
-   git worktree remove <path> --force 2>/dev/null; git branch -D <branch>
-   ```
-   For failed tasks, remove the worktree but retain its branch for inspection; do not run `git branch -D`. Run `git worktree prune` after cleanup. (Sequential tasks already committed in place — nothing to merge.) **Worktree creation, merging, and cleanup always happen here in the main loop — never inside a delegated subagent.**
-6. **Integration-verify** every wave that merged ≥1 worktree branch:
-   ```
-   delegate(source: "integration_verifier", provider: "chatgpt_codex", model: "gpt-5.6-terra",
-     instructions: "Verify merged wave <N>. Diff range: <WAVE_BASE>..HEAD. Run build/test/lint from docs/DEVELOPMENT.md; classify any failure.",
-     working_dir: "<repo path>", async: true)
-   ```
-   FAIL → pause, mark the implicated task `⚠️ Blocked`, fix forward (re-dispatch at one model tier higher) — never silently roll back.
-7. **Doc updates:** if any task's `docUpdatesNeeded` is set (and no `doc_maintainer` task was planned), `delegate(source: "doc_maintainer", provider: "chatgpt_codex", model: "gpt-5.6-terra", working_dir: <repo path>, async: true)` for the core-doc edits, then validate. Sequential, not parallel with the next wave.
-8. **Update `TASKS.md`** after every wave (`[x]` done, blocked reasons). Proceed to the next wave only with no blockers.
+Record `PHASE_BASE` once before the phase's first implementation and `WAVE_BASE` before each wave. These are main-loop git reads and recovery-critical values.
 
-## State 5 — Review
+Select a host model tier by the portable registry, not a concrete identifier: `trivial`/`simple` normally use `fast`, `moderate` uses `balanced`, and `complex`/`epic` use `deep`. Raise a tier after a failed validation; never hardcode a vendor model.
 
-After the final wave, with no uncommitted source changes (uncommitted `workflow/plans/` task files are fine), follow `~/.agents/skills/conductor/workflows/review-diff.md` with:
-```
-diffRange: "<PHASE_BASE>..HEAD"
-taskFiles: ["workflow/plans/.../tasks/01-slug.md", ...]
-changeType: "feature"   // or "bug"
-```
+Use the host capability contract in [Host capabilities](references/host-capabilities.md):
 
-It runs each review dimension (architecture, quality, logic, risks, security; +bugfix for bugs), adversarially verifies every Critical/Major finding with a 3-vote refuter panel (majority-refute drops false positives), and returns `{verdict, confirmed, minors, perDimension}`. Write `workflow/reviews/<name>/REVIEW.md` (and `ACTION_ITEMS.md` if not approved) from the result using [review-templates.md](review-templates.md). Record the verdict in the ledger:
+- a parallel-safe set uses `git.create_worktree`, then one `agent.dispatch` per card and `agent.wait` for results;
+- overlapping or single-card work runs sequentially and must not race the working branch;
+- dispatch only the identity stub: `project_id`, `task_id`, exact `agent_name`, worktree path, branch, base branch/SHA, lease TTL, and verification/doc-routing context. Do not paste a second copy of the spec.
 
-```markdown
-## Phase Review
+Size worker TTL by task complexity: `simple` 1800, `moderate` 3600, `complex` 7200, `epic` 14400 seconds; choose a bounded TTL for `trivial`. The worker verifies the granted TTL and renews immediately before long checks.
 
-| Round | Verdict | Review | Reviewed HEAD |
-|-------|---------|--------|---------------|
-| 0 | NEEDS_WORK | workflow/reviews/<name>/REVIEW.md | <commit> |
-```
+### Worker-owned segment
 
-The `## Phase Review` ledger in `TASKS.md` is the **durable, authoritative loop state** — update it immediately after every review. Your conversation context may be compacted between rounds; the ledger is the source of truth.
+Each implementor uses only the worker surface and performs, in order:
 
-## State 6 — Followup loop
+1. `claim_task` under its exact `agent_name` and sized `lease_ttl_secs`.
+2. `get_task`; stop if the returned spec or scope differs from dispatch identity.
+3. `register_worktree` with task, agent, branch, base branch, and base SHA.
+4. `update_task_status` to `queued`, then `executing`.
+5. Implement only `write_files`; narrate stages with `post_progress_message` and renew before long verification.
+6. Verify, commit, and call `record_commits`.
+7. Mark the worktree `idle` with its current SHA when supported.
+8. `update_task_status` to `in_review`, then `record_task_summary`.
+9. Retain the lease. Do not write `validated`/`completed` and do not release.
 
-**The loop is a ratchet, not a cycle.** Read the ledger first to learn which round you are in. Hard cap: **2 followup rounds per phase. There is no round 3, ever.**
+### Conductor-owned segment
 
-Branch on the latest verdict:
+For each returned worker:
 
-| Verdict | Action |
-|---------|--------|
-| ✅ APPROVED | go to State 7 |
-| ⚠️ APPROVED_WITH_CONCERNS | copy concerns to `TASKS.md` Notes as deferred items, go to State 7 — this is a passing, terminal verdict |
-| ⚠️ NEEDS_WORK / ❌ REJECTED | run a round if eligible |
+1. Reconcile card status, lease name, workspace row, commits, summary, and containment. Missing durable bookkeeping is a gap to repair explicitly, not a reason to guess.
+2. Run a registered task validator over the exact base-to-branch diff and acceptance criteria.
+3. Persist every task check with `record_gate_result` and the validator result with `record_task_verdict`.
+4. On `pass`, write `validated` under the worker's `agent_name` before merging. On `concern` or `fail`, leave it unmerged, move it to `needs_rework`, mark the wave blocked, preserve its branch, and pause.
+5. Merge passing branches in task order using main-loop git capabilities. Stop on conflict, record workspace conflict state, and preserve evidence.
+6. Replay commit mappings with the merged SHA and update workspace state through `merged` and `removed` as the git operations complete.
+7. Run the integration verifier over `WAVE_BASE..HEAD`. Persist task- or phase-scoped gate results under unique stable names.
+8. After all required integration gates pass, write `completed` under the worker's `agent_name`, inspect `blocking_task_ids`, then `release_task`. Mark the wave `merged`.
 
-Round eligibility: **Round 1** targets confirmed Critical + Major findings. **Round 2** targets ONLY Critical findings round 1 left unresolved or newly introduced — if only Major/Minor remain, defer them and go to State 7. Minor findings NEVER trigger a round.
+An integration failure after merge moves `validated` to `needs_rework`, marks the wave blocked, preserves integrated commits, and fixes forward. Never silently roll back and never merge a branch with a failed task verdict.
 
-Executing a round:
-1. Follow `~/.agents/skills/conductor/workflows/followup-investigate.md` with `issues: [{label, text}]` for the in-scope findings. It returns `taskable` (confirmed diagnoses with `filesToChange`), `contested`, and `notReproduced`. If `taskable` is empty → log "no taskable fixes" and stop the loop (escalate to State 7).
-2. Turn `taskable` diagnoses into a fix `TASKS.md` at `workflow/plans/.../followups/<phase>-fix-<round>/` with full File Overlap Analysis + Complexity. `notReproduced` go in Notes; do not task them.
-3. **Re-enter State 4 (Build) for the fix tasks ONLY** — implement, validate, merge, integration-verify. Do NOT run State 5/6 on the followup `TASKS.md` itself; that recursion is what the cap prevents.
-4. **Re-review:** follow `review-diff.md` with `diffRange: "<PHASE_BASE>..HEAD"`, `taskFiles`, `changeType`, and `previousReview: "<prev REVIEW.md path>"`. The `previousReview` input puts it in convergence mode (verify prior findings resolved; don't re-litigate unchanged code).
-5. Append the new verdict row to the ledger. Re-apply eligibility/stop rules.
+## State 5 — Documentation routing
 
-**Stop immediately and escalate** when: the ledger shows 2 rounds; the same blocking finding survives two consecutive reviews; the verdict didn't improve; `followup-investigate` returns no taskable fixes; or a fix requires changing a user-approved design decision.
+Documentation work is a task, not an incidental edit.
 
-## State 7 — Report
+1. Collect `doc_updates_needed` from implementation summaries and review findings.
+2. Resolve targets from the project's documentation policy and actual structure. Under a split structure, edit the unit doc and touch a root index only for cross-unit dependencies, new units, or changed links.
+3. Create dedicated tasks with exact doc `write_files`, evidence, complexity, and dependencies. Link review-driven tasks to their action item.
+4. Route core architecture, code-standards, development, and review-focus documents to the registered documentation-maintainer role. Ordinary implementors must not edit them.
+5. Run doc tasks sequentially relative to the next wave, validate them, and persist the same verdict/gate lifecycle. If a role has no worker surface, the conductor holds and walks that card explicitly.
 
-```markdown
-## Pipeline Complete
-**Tasks:** X/Y (+Z followup) · **Review:** ✅ APPROVED (round N) — <REVIEW.md>
-**Strategy:** A parallel (worktree) / B sequential (main loop)
+## State 6 — Review
 
-### Waves / Followup rounds / Deferred items / Blockers / Files modified
-```
+After the final wave and documentation tasks pass, require a clean primary checkout apart from expected user changes. Dispatch registered review roles over `<PHASE_BASE>..HEAD`: architecture, quality, logic, risk/tradeoffs, security, and bug-fix correctness for bugs. Adversarially verify Critical and Major findings before accepting them.
 
----
+Persist the synthesized result in the same turn:
 
-# Reference
+1. `record_review_round` at round `0`, scoped to the phase or plan, with normalized verdict, reviewed SHA, and summary.
+2. `add_action_item` once per confirmed finding, including Minor findings, linked to the review round and task when known.
+3. Do not write a local review ledger. `get_pipeline_state` and the latest review round are authoritative.
 
-## Task Complexity Rating → model tier
+Use [Review payloads](review-templates.md) and [Action-item payloads](ACTION_ITEMS_TEMPLATE.md).
 
-| Rating | Model | Criteria |
-|--------|-------|----------|
-| `low` | gpt-5.6-luna | Mechanical 1–3 file edits following an existing pattern verbatim; no new logic/design. |
-| `medium` | gpt-5.6-terra | Standard feature work in one module; clear specs, typical refactors. The default. |
-| `high` | gpt-5.6-sol | Novel algorithms, concurrency, cross-cutting refactors, intricate state, subtle correctness. |
+## State 7 — Exact two-round follow-up ratchet
 
-Rate honestly: a `low` task writing 4+ files or adding abstractions isn't `low`. Missing rating → estimate it, default `medium`. **Escalation:** when re-dispatching a task that failed validation or integration, bump one tier (`gpt-5.6-luna`→`gpt-5.6-terra`→`gpt-5.6-sol`).
+Call `get_pipeline_state` before every decision and read the latest round for the exact scope.
 
-## File Overlap Analysis (required for every TASKS.md)
+| Latest verdict | Action |
+|---|---|
+| `approved` | Report. |
+| `approved_with_concerns` | Mark remaining Minor items `deferred`; report. This is passing and terminal. |
+| `needs_work` / `rejected`, latest round 0 | Round 1 targets confirmed Critical and Major findings. |
+| `needs_work` / `rejected`, latest round 1 | Round 2 targets only unresolved or newly introduced Critical findings. Defer Major and Minor items. |
+| Any non-passing verdict at round 2 | Stop and escalate. Round 3 is forbidden. |
 
-For each task list **Files Modified (Write)** and read-only deps separately. For each pair of wave-peer tasks: no shared write files → **Parallel (worktree)**; shared write files → **Sequential (same branch)**. Minimize overlap by splitting file-scoped tasks, reordering deps into chains, or extracting a shared prerequisite task. You refuse to build a TASKS.md without this section.
+For each eligible round:
 
-## Model strategy (the fleet)
+1. Dispatch follow-up investigation for only the in-scope findings.
+2. Persist contested and not-reproduced diagnoses with `record_research_artifact`. If no taskable diagnoses remain, stop and escalate.
+3. Create fix cards on the same board with exact `write_files`, complexity, and `action_item_id`. There is no new plan approval gate.
+4. Re-enter State 3 and State 4 for those cards only, including a fresh overlap report and wave. Never recursively review the fix wave as a new phase.
+5. Re-review the original `<PHASE_BASE>..HEAD` in convergence mode using the previous review as context. Record round `1` or `2`.
+6. Update existing action items to `resolved`, `deferred`, `wont_fix`, or back to `open`; never re-file the same finding.
 
-Cheap-first-pass + adversarial verify. **Every `delegate` call must pass an explicit `model`** — a subagent dispatched without one inherits the session model, which is never what you want for fan-out work. Use these exact ChatGPT Codex model IDs on every `delegate(..., provider: "chatgpt_codex", model: <id>)` call; the runbooks encode these tiers per stage.
+Stop early if the same blocking finding survives two consecutive reviews, the verdict does not improve, no taskable fix exists, a fix changes an approved design decision, or any required task specification/base cannot be recovered unambiguously.
 
-| Tier | Model ID | Use for |
-|------|----------|---------|
-| **Cheap** | `gpt-5.6-luna` | Broad/mechanical generation: researchers (`codebase_researcher`, `external_researcher`, `git_historian`), `task_validator`, `low`-complexity implementors, and the finding-refute voters in `review-diff`. Always adversarially checked. |
-| **Workhorse** | `gpt-5.6-terra` | Most implementation (`medium` complexity), `integration_verifier`, `doc_maintainer`, the architecture/quality/risks/bugfix review dimensions, and research-claim verifiers. The default when unsure. |
-| **Deep** | `gpt-5.6-sol` | `high`-complexity implementors and the deepest-reasoning reviewers (`logic_reasoning_checker`, `security_reviewer`). You (the conductor) run on the session model. |
+## State 8 — Report
 
-Context can raise a tier (e.g. a researcher on a gnarly concurrency question → `gpt-5.6-terra`; a re-dispatch after failure → one tier up), never lower it below the table's default for that role.
+Read final state from Zabin and git. Report the pinned project id, plan/board/phase ids, task counts and blockers, waves, source and merged commits, gates, latest review verdict/round, follow-up count, deferred or `wont_fix` findings, documentation routing, and capability limitations.
 
-## Hard rules
-
-- Refuse to build a `TASKS.md` with no File Overlap Analysis.
-- Never merge a branch that failed validation; pause on any FAIL.
-- Always integration-verify a wave that merged worktree branches.
-- The `## Phase Review` ledger is the authoritative round counter — check it before every round.
-- Never run States 5–6 on a followup `TASKS.md`; the parent re-review is its only review.
-- Never exceed 2 followup rounds; APPROVED_WITH_CONCERNS is passing — don't start a round for Minor-only findings.
-- Pause for the user at plan approval and at any blocking failure. Sequential same-branch tasks run in the main loop, never inside a background delegate.
-- Worktrees are created, merged, and cleaned up ONLY in the main loop. Subagents dispatched via `delegate` cannot recursively delegate to further subagents — any stage needing multiple parallel voices (fan-out, N-way voting) is orchestrated by the conductor issuing multiple `delegate` calls directly, not by asking one subagent to fan out on its own.
+Never reconstruct the report from conversation memory or local Markdown.

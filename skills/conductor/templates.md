@@ -1,451 +1,194 @@
-# Planning Document Templates
+# Planning MCP Payload Recipes
 
-Reference templates for creating plans, bug reports, task indexes, and individual tasks.
+These payloads replace plan, task-index, task-file, and overlap-matrix Markdown templates. Substitute ids and repository-grounded content, then invoke the public MCP tool name with the shown argument object. Every project-scoped payload carries `project_id` explicitly.
 
----
+See [Payload examples](references/payload-examples.md) for lifecycle calls and [MCP lifecycle](references/mcp-lifecycle.md) for strict vocabularies.
 
-## Feature Plan Template
+## Persist research before planning
 
-**Location:** `workflow/plans/features/<feature-name>/PLAN.md`
-
-```markdown
-# Plan: <Feature Name>
-
-## TL;DR
-
-<20-100 words: what/how/why>
-
----
-
-## Background
-
-<Context on why this feature is needed, current limitations, user pain points>
-
----
-
-## Affected Modules
-
-- `src/<module>.rs` - <Brief description of changes>
-- `src/<module>.rs` - **NEW** <For new files>
-
----
-
-## Development Phases
-
-### Phase 1: <Phase Title>
-
-**Goal**: <1-2 sentence description>
-
-**Duration**: <Estimate>
-
-#### Steps
-
-1. **<Step Title>**
-   - <Bullet points with specific changes>
-   - <Implementation details>
-
-2. **<Step Title>**
-   - <Details>
-
-**Milestone**: <What users can do when phase complete>
-
----
-
-### Phase 2: <Phase Title>
-
-<Repeat structure>
-
----
-
-## Edge Cases & Risks
-
-### <Risk Category>
-- **Risk:** <Description>
-- **Mitigation:** <How to address>
-
----
-
-## Configuration Additions
-
-<If applicable, show config file additions>
-
-```toml
-[section]
-option = "value"
-```
-
----
-
-## Keyboard Shortcuts Summary
-
-| Key | Action |
-|-----|--------|
-| `x` | <Action> |
-
----
-
-## Success Criteria
-
-### Phase 1 Complete When:
-- [ ] <Measurable outcome>
-- [ ] <Testable condition>
-
-### Phase 2 Complete When:
-- [ ] <Measurable outcome>
-
----
-
-## Future Enhancements
-
-<Optional: ideas for future iterations>
-
----
-
-## References
-
-- [Link](url)
-```
-
----
-
-## Bug Report Plan Template
-
-**Location:** `workflow/plans/bugs/<bug-name>/BUG.md`
-
-```markdown
-# Bugfix Plan: <Bug Title>
-
-## TL;DR
-
-<20-100 words: what bugs exist, root cause summary, fix approach>
-
-## Bug Reports
-
-### Bug 1: <Bug Title>
-**Symptom:** <What the user sees>
-
-**Expected:** <What should happen>
-
-**Root Cause Analysis:**
-1. <Specific code path causing issue>
-2. <Why it fails>
-
-**Affected Files:**
-- `src/<file>.rs` - <description>
-
----
-
-### Bug 2: <Bug Title>
-
-<Repeat structure>
-
----
-
-## Affected Modules
-
-- `src/<module>.rs`: <Description of needed changes>
-
----
-
-## Phases
-
-### Phase 1: <Fix Category> (Bug X) - Critical
-
-<Description of fix approach>
-
-**Steps:**
-1. <Specific code change>
-2. <Implementation detail>
-
-**Measurable Outcomes:**
-- <How to verify fix works>
-- <Test case>
-
----
-
-## Edge Cases & Risks
-
-### <Risk Category>
-- **Risk:** <Description>
-- **Mitigation:** <How to address>
-
----
-
-## Further Considerations
-
-1. **<Question>** <Options or tradeoffs>
-
----
-
-## Task Dependency Graph
-
-```
-Phase 1
-├── 01-task-slug
-├── 02-task-slug
-│   └── depends on: 01
-└── 03-task-slug
-    └── depends on: 02
-```
-
----
-
-## Success Criteria
-
-### Phase 1 Complete When:
-- [ ] <Bug X is fixed, verified by...>
-- [ ] <No regression in...>
-
----
-
-## Milestone Deliverable
-
-<Summary of what's achieved when all bugs are fixed>
-```
-
----
-
-## Task Index Template
-
-**Location:** `workflow/plans/<type>/<name>/<phase>/TASKS.md`
-
-```markdown
-# <Phase/Feature Name> - Task Index
-
-## Overview
-
-<1-2 sentence summary of this phase/feature>
-
-**Total Tasks:** X
-**Estimated Hours:** X-Y hours
-
-## Task Dependency Graph
-
-```
-┌─────────────────────┐     ┌─────────────────────┐
-│  01-task-slug       │     │  02-task-slug       │
-└─────────┬───────────┘     └──────────┬──────────┘
-          │                            │
-          └──────────┬─────────────────┘
-                     ▼
-          ┌─────────────────────┐
-          │  03-task-slug       │
-          └─────────────────────┘
-```
-
-## Tasks
-
-| # | Task | Status | Complexity | Depends On | Est. Hours | Modules |
-|---|------|--------|------------|------------|------------|---------|
-| 1 | [01-task-slug](tasks/01-task-slug.md) | Not Started | medium | - | 3-4h | `module.rs` |
-| 2 | [02-task-slug](tasks/02-task-slug.md) | Not Started | low | - | 2-3h | `module.rs` |
-| 3 | [03-task-slug](tasks/03-task-slug.md) | Not Started | high | 1, 2 | 4-5h | `module.rs` |
-
-## File Overlap Analysis
-
-<!-- The conductor uses this section to determine isolation strategy per wave -->
-
-| Task | Files Modified (Write) | Files Read (Dependencies) |
-|------|----------------------|--------------------------|
-| 01-task-slug | `src/<file>.rs`, `src/<file>.rs` | `src/<config>.rs` |
-| 02-task-slug | `src/<file>.rs` | `src/<config>.rs` |
-| 03-task-slug | `src/<file>.rs`, `src/<file>.rs` | - |
-
-### Overlap Matrix
-
-<!-- Compare write-files between tasks that share the same wave (no dependency between them) -->
-<!-- Read-only overlap is fine — only write overlap forces sequential execution -->
-
-| Task Pair | Shared Write Files | Isolation Strategy |
-|-----------|-------------------|-------------------|
-| 01 + 02 | None | Parallel (worktree) |
-| 01 + 03 | `src/<file>.rs` | Sequential (same branch) |
-| 02 + 03 | None | Parallel (worktree) |
-
-## Success Criteria
-
-<Phase/feature> is complete when:
-
-- [ ] <Measurable outcome>
-- [ ] <Testable condition>
-- [ ] All new code has unit tests
-- [ ] No regressions in existing functionality
-
-## Keyboard Shortcuts
-
-<If applicable>
-
-| Key | Action |
-|-----|--------|
-| `x` | <Action> |
-
-## Notes
-
-- <Important context>
-- <Constraints or considerations>
-```
-
----
-
-## Individual Task Template
-
-**Location:** `workflow/plans/<type>/<name>/<phase>/tasks/<##-task-slug>.md`
-
-```markdown
-## Task: <Task Title>
-
-**Objective**: <1-2 sentences describing what this task accomplishes>
-
-**Depends on**: <Task slugs or "None">
-
-**Agent:** <doc_maintainer for core doc tasks, or omit for default implementor>
-
-**Complexity:** <low | medium | high — drives the implementor model tier (haiku/sonnet/opus); see SKILL.md "Task Complexity Rating">
-
-**Estimated Time**: <X-Y hours>
-
-### Scope
-
-**Files Modified (Write):**
-- `src/<module>.rs`: <Specific changes to make>
-
-**Files Read (Dependencies):**
-- `src/<other>.rs`: <Why this file is read>
-
-### Details
-
-<Detailed implementation guidance, code examples if helpful>
-
-```rust
-// Example code structure
-pub struct Example {
-    pub field: Type,
+```json
+{
+  "project_id": "prj_example",
+  "kind": "sweep",
+  "title": "Authentication boundary research",
+  "body": "verified: middleware owns token parsing (src/http/auth.rs:41); contested: refresh rotation ownership; refuted: handlers parse bearer tokens",
+  "phase_id": "pph_example"
 }
 ```
 
-### Acceptance Criteria
+Call `record_research_artifact`. Omit `phase_id` until one exists; use a returned `plan_id` when the artifact belongs to the whole plan.
 
-1. <Measurable outcome - can be verified>
-2. <Testable condition - can be unit tested>
-3. <Behavior specification>
+## Create the plan shell
 
-### Testing
+```json
+{
+  "project_id": "prj_example",
+  "title": "Rotate refresh tokens safely",
+  "description": "Add one-time refresh-token rotation with replay detection."
+}
+```
 
-<Test approach and example test cases>
+Call `create_plan_draft` and retain the returned `plan_id` and revision.
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
+## Set scalar and list sections
 
-    #[test]
-    fn test_example() {
-        // Test implementation
+Scalar section with `set_plan_section`:
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "section": "tldr",
+  "action": "set",
+  "content": {
+    "text": "Rotate refresh tokens atomically and reject replayed tokens."
+  }
+}
+```
+
+List section:
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "section": "risks",
+  "action": "set",
+  "content": {
+    "items": [
+      "Concurrent refreshes must have one winner.",
+      "Existing sessions need a documented migration path."
+    ]
+  }
+}
+```
+
+Use `content.modules` for the `modules` section. Supported actions are `set`, `append`, and `clear`; `clear` needs no section content.
+
+## Add a phase
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "phase": {
+    "title": "Rotation domain and persistence",
+    "goal": "Make token consumption atomic and observable.",
+    "milestone": "Concurrent refresh requests produce exactly one successor token.",
+    "steps": [
+      "Add the rotation transaction.",
+      "Expose replay outcome to the service layer.",
+      "Cover concurrency and migration cases."
+    ]
+  }
+}
+```
+
+Call `add_phase`. Phase task dependency indices are zero-based and local to the phase.
+
+## Add complete task drafts
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "phase_index": 0,
+  "tasks": [
+    {
+      "title": "Implement atomic refresh rotation",
+      "description": "Objective: consume a refresh token and insert its successor in one transaction. Acceptance: two concurrent consumers yield one success and one replay error; rollback leaves the original usable; existing repository error mapping is preserved. Write only the declared files. Read dependencies: src/domain/session.rs and docs/DEVELOPMENT.md. Verification: run the repository unit-test and lint commands documented for this module.",
+      "complexity": "complex",
+      "effort": "1 day",
+      "labels": ["backend", "security"],
+      "write_files": [
+        "src/storage/refresh_tokens.rs",
+        "tests/refresh_rotation.rs"
+      ],
+      "depends_on": []
+    },
+    {
+      "title": "Wire replay outcome into the session service",
+      "description": "Objective: translate the storage replay outcome through the existing session service. Acceptance: callers receive the established replay error and unrelated errors are unchanged. Read dependency: src/storage/refresh_tokens.rs. Verification: run session-service tests and the repository lint command.",
+      "complexity": "moderate",
+      "write_files": [
+        "src/domain/session.rs",
+        "tests/session_service.rs"
+      ],
+      "depends_on": [0]
     }
+  ]
 }
 ```
 
-### Notes
+Call `add_phase_tasks`. Reject a draft that lacks a self-contained description or non-empty `write_files`.
 
-- <Important considerations>
-- <Edge cases to handle>
-- <Future enhancements to defer>
+## Finalize and wait for approval
 
----
-
-## Completion Summary
-
-**Status:** Done / Blocked / Failed
-**Branch:** <current branch name>
-
-### Files Modified
-
-| File | Changes |
-|------|---------|
-| `src/path/file` | <what changed> |
-
-### Notable Decisions/Tradeoffs
-
-1. **<Decision>**: <Rationale and implications>
-
-### Testing Performed
-
-- <verification command> - Passed/Failed
-- <test command> - Passed/Failed (X tests)
-- <lint command> - Passed/Failed
-
-(See `docs/DEVELOPMENT.md` for project-specific verification commands)
-
-### Risks/Limitations
-
-1. **<Risk>**: <Description and mitigation if any>
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example"
+}
 ```
 
----
+Call `finalize_plan`, pause for human approval, then confirm `approved_by`, `approved_at`, and the current revision with `get_plan`.
 
-## Documentation Update Task Template
+## Materialize the approved plan
 
-**Location:** `workflow/plans/<type>/<name>/<phase>/tasks/<##-update-docs>.md`
-
-Use this template when a task is specifically for updating core project documentation. These tasks are routed to the `doc_maintainer` agent by the conductor.
-
-```markdown
-## Task: Update Documentation for <Feature/Change>
-
-**Agent:** doc_maintainer
-
-**Objective**: Update core project documentation to reflect changes from implementation tasks
-
-**Depends on**: <all implementation task slugs that this doc update covers>
-
-**Estimated Time**: <X-Y hours>
-
-### Scope
-
-**Files Modified (Write):**
-- `docs/ARCHITECTURE.md`: <what architectural changes to document>
-- `docs/CODE_STANDARDS.md`: <what new patterns/conventions to document>
-- `docs/DEVELOPMENT.md`: <what new build steps/commands to document>
-
-**Files Read (Dependencies):**
-- `~/.agents/skills/doc-validate/schemas.md`: Content boundary rules
-- <implementation task files for change context>
-
-### Change Context
-
-Summarize what implementation changes require doc updates:
-
-1. **<Change area>**: <description of what changed and which doc needs updating>
-
-### Acceptance Criteria
-
-1. Updated docs accurately reflect the implementation changes
-2. No content boundary violations (architecture content only in ARCHITECTURE.md, etc.)
-3. All required sections present per schemas.md
-4. Cross-references valid (especially for hub-and-spoke projects)
-
-### Notes
-
-- Follow content boundaries strictly — see ~/.agents/skills/doc-validate/schemas.md
-- Make targeted edits, do not rewrite entire documents
-- If unsure whether content belongs in a particular doc, consult the Content Boundary Quick Reference
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "name": "Refresh-token rotation",
+  "expected_revision": "7"
+}
 ```
 
----
+Call `create_board` only after the authoritative approval read. A revision conflict requires a re-read; it is not safe to drop `expected_revision`.
 
-## Status Icons Reference
+## Verify materialized cards
 
-| Status | Icon |
-|--------|------|
-| Not Started | (blank) |
-| In Progress | 🔄 |
-| Done | ✅ |
-| Blocked | ⚠️ |
-| Failed | ❌ |
+For every intended card, call `get_task`:
 
-## File Naming Conventions
+```json
+{
+  "project_id": "prj_example",
+  "task_id": "tsk_example"
+}
+```
 
-- **Plans:** `PLAN.md` (features) or `BUG.md` (bugs)
-- **Task Index:** `TASKS.md`
-- **Tasks:** `##-task-slug.md` (e.g., `01-add-filter-types.md`)
-- **Slugs:** lowercase, hyphen-separated, descriptive
+Confirm description, write scope, status, relationships, and subtasks from the response. Page `list_tasks` and `list_workspaces` before scheduling.
+
+## Ask the server for overlap
+
+```json
+{
+  "project_id": "prj_example",
+  "task_ids": ["tsk_first", "tsk_second"]
+}
+```
+
+Call `get_overlap_report` before every dispatch. `parallel_safe:true` authorizes parallel worktrees. Any `overlaps` pair must be separated; any `unscoped` task must be re-scoped or run sequentially.
+
+## Add ad-hoc, fix, or documentation tasks
+
+```json
+{
+  "project_id": "prj_example",
+  "board_id": "brd_example",
+  "tasks": [
+    {
+      "title": "Document refresh-token replay handling",
+      "description": "Update the project security and development documentation from the accepted implementation evidence. Acceptance: behavior, verification command, and migration note match the landed code. This is a core-doc task and must be routed to the documentation-maintainer role.",
+      "complexity": "simple",
+      "labels": ["docs"],
+      "write_files": [
+        "docs/ARCHITECTURE.md",
+        "docs/DEVELOPMENT.md"
+      ]
+    }
+  ]
+}
+```
+
+Call `create_tasks`. For a review fix, include the finding's `action_item_id` in that task object. Reuse the existing board; do not create a new plan for a follow-up round.

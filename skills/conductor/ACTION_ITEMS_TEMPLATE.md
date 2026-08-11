@@ -1,182 +1,112 @@
-# Action Items: <Feature/Bug Name>
+# Action-Item MCP Payload Recipes
 
-**Review Date:** <YYYY-MM-DD>
-**Review Document:** [`REVIEW.md`](./REVIEW.md)
-**Verdict:** ❌ REJECTED / ⚠️ NEEDS WORK
+Action items are durable Zabin records, not an `ACTION_ITEMS.md` checklist. Create one record per confirmed review finding and update that same record across follow-up rounds.
 
----
+## Create a blocking item
 
-## Summary
+Call `add_action_item`:
 
-**Total Issues:** <count>
-- 🔴 Critical: <count>
-- 🟠 Major: <count>
-- 🟡 Minor: <count>
+```json
+{
+  "project_id": "prj_example",
+  "severity": "critical",
+  "title": "Refresh-token replay leaks credential material",
+  "body": "Replay telemetry logs a token prefix. Replace it with the stable record id and add a regression assertion.",
+  "file_ref": "src/domain/session.rs:188",
+  "review_round_id": "rvr_round_0",
+  "task_id": "tsk_rotation"
+}
+```
 
-**Estimated Rework Effort:** Small (< 1 hour) / Medium (1-4 hours) / Large (> 4 hours)
+The created record defaults to `open`. Critical and Major items from round 0 are eligible for round 1. Minor items are recorded but never trigger a round.
 
----
+## Create a Minor item
 
-## 🔴 Critical Issues (Must Fix Before Merge)
+```json
+{
+  "project_id": "prj_example",
+  "severity": "minor",
+  "title": "Clarify replay metric name",
+  "body": "The metric name does not distinguish replay rejection from expiration.",
+  "file_ref": "src/telemetry/session_metrics.rs:24",
+  "review_round_id": "rvr_round_0"
+}
+```
 
-These issues BLOCK the merge. All must be resolved.
+## Link a fix card
 
-### 1. <Issue Title>
+Create a task on the existing board with the action item id:
 
-| Attribute | Value |
-|-----------|-------|
-| **Source** | <Architecture Enforcer / Code Quality Inspector / Logic Checker / Bug Fix Reviewer / Risks Analyzer> |
-| **File** | `<path/to/file>` |
-| **Line** | <line number or range> |
-| **Severity** | 🔴 Critical |
+```json
+{
+  "project_id": "prj_example",
+  "board_id": "brd_example",
+  "tasks": [
+    {
+      "title": "Remove token material from replay telemetry",
+      "description": "Objective: log only stable token-record identity on replay. Acceptance: no presented token bytes reach logs; replay outcome remains observable; regression test covers structured logging. Read dependency: the round-0 review artifact. Verification: run session tests and repository lint.",
+      "complexity": "moderate",
+      "labels": ["security", "followup"],
+      "write_files": [
+        "src/domain/session.rs",
+        "tests/session_service.rs"
+      ],
+      "action_item_id": "act_example"
+    }
+  ]
+}
+```
 
-**Problem:**
-<Detailed description of what is wrong>
+Call `create_tasks`. Follow-up tasks reuse the board and still require specification and overlap gates.
 
-**Why It's Critical:**
-<Why this must be fixed - crash risk, data corruption, security, architecture violation, etc.>
+## Resolve after verified convergence
 
-**Required Fix:**
-<Specific, actionable steps to fix this issue>
+```json
+{
+  "project_id": "prj_example",
+  "action_item_id": "act_example",
+  "status": "resolved",
+  "resolution_note": "Fixed by merged commit ef60c2be9cc134bf472ee0d3747faf85515bf2f1; convergence review round 1 confirmed no token material is logged."
+}
+```
 
-**Verification:**
-- [ ] <How to verify the fix is correct>
-- [ ] <Test to run or behavior to check>
+Call `update_action_item` only after the re-review confirms the finding is fixed.
 
----
+## Defer a passing concern
 
-### 2. <Issue Title>
+```json
+{
+  "project_id": "prj_example",
+  "action_item_id": "act_minor",
+  "status": "deferred",
+  "resolution_note": "Minor naming concern accepted for later cleanup; review round 1 is approved_with_concerns."
+}
+```
 
-| Attribute | Value |
-|-----------|-------|
-| **Source** | <agent name> |
-| **File** | `<path>` |
-| **Line** | <line> |
-| **Severity** | 🔴 Critical |
+`approved_with_concerns` is passing and terminal. Deferring a Minor item does not open another round.
 
-**Problem:**
-<description>
+## Record an intentional non-fix
 
-**Why It's Critical:**
-<explanation>
+```json
+{
+  "project_id": "prj_example",
+  "action_item_id": "act_example",
+  "status": "wont_fix",
+  "resolution_note": "The proposed change conflicts with the human-approved compatibility decision recorded on plan fplan_example."
+}
+```
 
-**Required Fix:**
-<steps>
+Use `wont_fix` only with a durable reason. If the change would revise approved design, stop the ratchet and request a new decision.
 
-**Verification:**
-- [ ] <verification step>
+## Reopen a surviving finding
 
----
+```json
+{
+  "project_id": "prj_example",
+  "action_item_id": "act_example",
+  "status": "open",
+  "resolution_note": "Round 1 reproduced the original leak in the structured error path; the item remains blocking."
+}
+```
 
-## 🟠 Major Issues (Should Fix Before Merge)
-
-These issues are significant and should be addressed. Exceptions require justification.
-
-### 1. <Issue Title>
-
-| Attribute | Value |
-|-----------|-------|
-| **Source** | <agent name> |
-| **File** | `<path>` |
-| **Severity** | 🟠 Major |
-
-**Problem:**
-<description>
-
-**Impact:**
-<What could go wrong if not fixed>
-
-**Recommended Fix:**
-<How to address this>
-
-**If Deferred:**
-- Track in: <issue tracker location>
-- Mitigation: <temporary workaround if any>
-
----
-
-## 🟡 Minor Issues (Consider Fixing)
-
-These are non-blocking improvements. Address if time permits.
-
-### 1. <Issue Title>
-- **File:** `<path>`
-- **Suggestion:** <what could be improved>
-- **Benefit:** <why it would help>
-
-### 2. <Issue Title>
-- **File:** `<path>`
-- **Suggestion:** <improvement>
-- **Benefit:** <benefit>
-
----
-
-## Files Requiring Changes
-
-| File | Issues | Priority |
-|------|--------|----------|
-| `<path/to/file1>` | #1, #3 | High |
-| `<path/to/file2>` | #2 | High |
-| `<path/to/file3>` | #4, #5 | Medium |
-
----
-
-## Rework Checklist
-
-Complete all items before requesting re-review:
-
-### Critical Fixes
-- [ ] Issue #1: <brief description>
-- [ ] Issue #2: <brief description>
-
-### Major Fixes
-- [ ] Issue #3: <brief description>
-- [ ] Issue #4: <brief description>
-
-### Quality Gates
-
-Run verification commands from `docs/DEVELOPMENT.md`:
-- [ ] Format command — Code is formatted
-- [ ] Check command — No compilation errors
-- [ ] Test command — All tests pass
-- [ ] Lint command — No warnings
-
-### Documentation
-- [ ] Task completion summary updated with new changes
-- [ ] Any new public APIs documented
-
----
-
-## Re-review Instructions
-
-After addressing the issues above:
-
-1. **Update the task file** completion summary with:
-   - Additional files modified
-   - New decisions/tradeoffs if any
-   - Updated test results
-
-2. **Run verification commands** (see `docs/DEVELOPMENT.md` for project-specific commands):
-   ```bash
-   # Example: format, check, test, lint
-   ```
-
-3. **Self-check:**
-   - [ ] All critical issues resolved
-   - [ ] All major issues resolved or justified
-   - [ ] Code compiles and tests pass
-   - [ ] No new warnings introduced
-
-4. **Request re-review** by mentioning the reviewer skill
-
----
-
-## Notes
-
-<Any additional context, clarifications, or guidance for the implementer>
-
----
-
-**Original Review:** [`REVIEW.md`](./REVIEW.md)
-**Task File:** `<path/to/task.md>`
-**Reviewer:** Code Review Orchestrator
+Never call `add_action_item` again for the same finding. Updates preserve its original review evidence and make convergence auditable.
