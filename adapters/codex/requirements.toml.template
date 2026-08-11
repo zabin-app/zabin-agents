@@ -1,0 +1,6 @@
+# ADMIN ONLY: generated enforcement allowlist from config/zabin-mcp.json.
+# Do not copy this file into a project or ordinary user installation.
+# Deploy only through an explicit administrator workflow, then validate the
+# effective policy on supported clients. Unix target: /etc/codex/requirements.toml.
+
+@@MCP_SERVER_IDENTITIES@@

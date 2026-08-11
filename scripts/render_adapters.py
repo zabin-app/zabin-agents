@@ -12,8 +12,10 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
@@ -22,8 +24,10 @@ from typing import Any, Callable, Mapping, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / "config" / "zabin-mcp.json"
 DEFAULT_SCHEMA = ROOT / "schemas" / "mcp-policy.schema.json"
+TEMPLATE_ROOT = ROOT / "adapters"
 SUPPORTED_SCHEMA_ID = "https://zabin.dev/schemas/mcp-policy.schema.json"
 SUPPORTED_SCHEMA_MAJOR = 1
+TEMPLATE_TOKEN = re.compile(r"@@([A-Z][A-Z0-9_]*)@@")
 CODEX_APPROVAL_MODES = {
     "auto": "auto",
     "scope_granted": "auto",
@@ -50,6 +54,53 @@ class TargetSpec:
     supports_tool_filtering: bool
     supports_approval_policy: bool
     renderer: Callable[[dict[str, Any]], dict[PurePosixPath, bytes]]
+
+
+@dataclass(frozen=True)
+class TemplateSpec:
+    """A checked template and its exact output contract."""
+
+    name: str
+    source: PurePosixPath
+    artifact: PurePosixPath
+    placeholders: frozenset[str]
+    syntax: str
+    admin_only: bool = False
+
+
+TEMPLATES: dict[str, TemplateSpec] = {
+    "claude_mcp": TemplateSpec(
+        name="claude_mcp",
+        source=PurePosixPath("claude/mcp.json.template"),
+        artifact=PurePosixPath(".mcp.json"),
+        placeholders=frozenset({"MCP_SERVERS"}),
+        syntax="json",
+    ),
+    "claude_settings": TemplateSpec(
+        name="claude_settings",
+        source=PurePosixPath("claude/settings.json.template"),
+        artifact=PurePosixPath(".claude/settings.json"),
+        placeholders=frozenset(
+            {"ALLOW_RULES", "ASK_RULES", "DENY_RULES", "PREFLIGHT_COMMAND"}
+        ),
+        syntax="json",
+    ),
+    "codex_config": TemplateSpec(
+        name="codex_config",
+        source=PurePosixPath("codex/config.toml.template"),
+        artifact=PurePosixPath(".codex/config.toml"),
+        placeholders=frozenset({"MCP_SERVERS", "PREFLIGHT_COMMAND"}),
+        syntax="toml",
+    ),
+    "codex_requirements": TemplateSpec(
+        name="codex_requirements",
+        source=PurePosixPath("codex/requirements.toml.template"),
+        artifact=PurePosixPath("requirements.toml"),
+        placeholders=frozenset({"MCP_SERVER_IDENTITIES"}),
+        syntax="toml",
+        admin_only=True,
+    ),
+}
 
 
 class Draft202012SubsetValidator:
@@ -164,6 +215,20 @@ def validate_server_identities(policy: dict[str, Any]) -> None:
 
     servers = policy["servers"]
     expected = {"zabin-conductor": "conductor", "zabin-worker": "worker"}
+    expected_adapters = {
+        "claude_code": {
+            "config_target": ".mcp.json",
+            "credential_binding": "environment_interpolation",
+            "tool_reference_mode": "client_qualified",
+            "required_fields": {"type", "url", "headers.Authorization"},
+        },
+        "codex": {
+            "config_target": ".codex/config.toml",
+            "credential_binding": "bearer_token_env_var",
+            "tool_reference_mode": "client_native",
+            "required_fields": {"url", "bearer_token_env_var", "enabled_tools"},
+        },
+    }
     seen_ids: set[str] = set()
     seen_surfaces: set[str] = set()
     seen_keys: set[str] = set()
@@ -190,20 +255,64 @@ def validate_server_identities(policy: dict[str, Any]) -> None:
             raise RenderError(f"literal credentials are forbidden for {server_id!r}")
 
         tool_names = [tool["name"] for tool in server["tools"]]
+        if not tool_names:
+            raise RenderError(f"server tool allowlist must not be empty: {server_id!r}")
         if len(tool_names) != len(set(tool_names)):
             raise RenderError(f"duplicate canonical tool name in {server_id!r}")
         known_tools = set(tool_names)
+        gates = server["approval_policy"]["human_gates"]
+        if len(gates) != len(set(gates)):
+            raise RenderError(f"duplicate human gate in {server_id!r}")
         unknown_gates = set(server["approval_policy"]["human_gates"]) - known_tools
         if unknown_gates:
             raise RenderError(
                 f"human gates reference unknown tools for {server_id!r}: "
                 + ", ".join(sorted(unknown_gates))
             )
-        for adapter in server["adapter_requirements"]:
+        approval_by_tool = {tool["name"]: tool["approval"] for tool in server["tools"]}
+        non_gate_human_approvals = {
+            name for name, approval in approval_by_tool.items() if approval == "human_gate"
+        } - set(gates)
+        if non_gate_human_approvals:
+            raise RenderError(
+                f"human-gated tools are missing from human_gates for {server_id!r}: "
+                + ", ".join(sorted(non_gate_human_approvals))
+            )
+        wrong_gate_approvals = {name for name in gates if approval_by_tool[name] != "human_gate"}
+        if wrong_gate_approvals:
+            raise RenderError(
+                f"human_gates reference tools without human_gate approval for {server_id!r}: "
+                + ", ".join(sorted(wrong_gate_approvals))
+            )
+
+        adapters = server["adapter_requirements"]
+        clients = [adapter["client"] for adapter in adapters]
+        if len(clients) != len(set(clients)) or set(clients) != set(expected_adapters):
+            raise RenderError(
+                f"{server_id!r} must declare exactly one adapter for each supported client"
+            )
+        for adapter in adapters:
             if adapter["server_key"] != key:
                 raise RenderError(
                     f"adapter server key does not match identity for {server_id!r}: "
                     f"{adapter['server_key']!r} != {key!r}"
+                )
+            adapter_expected = expected_adapters[adapter["client"]]
+            for field in ("config_target", "credential_binding", "tool_reference_mode"):
+                if adapter[field] != adapter_expected[field]:
+                    raise RenderError(
+                        f"{adapter['client']!r} adapter {field} mismatch for {server_id!r}"
+                    )
+            required_fields = adapter["required_fields"]
+            if len(required_fields) != len(set(required_fields)):
+                raise RenderError(
+                    f"duplicate required adapter field for {server_id!r}/{adapter['client']}"
+                )
+            unknown_fields = set(required_fields) - adapter_expected["required_fields"]
+            if unknown_fields:
+                raise RenderError(
+                    f"unknown required adapter fields for {server_id!r}/{adapter['client']}: "
+                    + ", ".join(sorted(unknown_fields))
                 )
 
         seen_ids.add(server_id)
@@ -235,6 +344,18 @@ def load_and_validate_policy(policy_path: Path, schema_path: Path) -> dict[str, 
     Draft202012SubsetValidator(schema).validate(policy)
     if _schema_major(policy["schema_version"]) != SUPPORTED_SCHEMA_MAJOR:
         raise RenderError(f"unsupported policy schema major: {policy['schema_version']!r}")
+    risk_ids = [risk["id"] for risk in policy["risk_classes"]]
+    if len(risk_ids) != len(set(risk_ids)):
+        raise RenderError("duplicate risk class ids are forbidden")
+    expected_risk_ids = {
+        "read_only",
+        "task_scoped_write",
+        "durable_write",
+        "destructive",
+        "human_interaction",
+    }
+    if set(risk_ids) != expected_risk_ids:
+        raise RenderError("policy must declare every canonical risk class exactly once")
     validate_server_identities(policy)
     return policy
 
@@ -243,16 +364,169 @@ def required_environment(policy: dict[str, Any]) -> tuple[str, ...]:
     return tuple(sorted({server["credential"]["name"] for server in policy["servers"]}))
 
 
+def _is_literal_placeholder(name: str, value: str) -> bool:
+    stripped = value.strip()
+    placeholders = {
+        f"${name}",
+        f"${{{name}}}",
+        f"Bearer ${name}",
+        f"Bearer ${{{name}}}",
+        f"@@{name}@@",
+    }
+    return stripped in placeholders or f"${{{name}}}" in stripped
+
+
 def missing_environment(
     policy: dict[str, Any], environ: Mapping[str, str]
 ) -> tuple[str, ...]:
-    """Return absent or empty credential variable names without reading values out."""
+    """Return unusable credential names without exposing their values."""
 
-    return tuple(name for name in required_environment(policy) if not environ.get(name))
+    unusable = []
+    for name in required_environment(policy):
+        value = environ.get(name)
+        if not value or _is_literal_placeholder(name, value):
+            unusable.append(name)
+    return tuple(unusable)
 
 
-def _json_bytes(value: Any) -> bytes:
-    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n").encode("utf-8")
+def validate_template_manifest(
+    manifest: Mapping[str, TemplateSpec] = TEMPLATES,
+) -> None:
+    """Validate the complete checked template inventory and placeholder sets."""
+
+    expected_names = {
+        "claude_mcp",
+        "claude_settings",
+        "codex_config",
+        "codex_requirements",
+    }
+    if set(manifest) != expected_names:
+        missing = sorted(expected_names - set(manifest))
+        unknown = sorted(set(manifest) - expected_names)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if unknown:
+            detail.append("unknown " + ", ".join(unknown))
+        raise RenderError("invalid template manifest: " + "; ".join(detail))
+
+    sources: set[PurePosixPath] = set()
+    artifacts: set[PurePosixPath] = set()
+    for name, spec in manifest.items():
+        if name != spec.name:
+            raise RenderError(f"template manifest key/name mismatch: {name!r}/{spec.name!r}")
+        for label, path in (("source", spec.source), ("artifact", spec.artifact)):
+            if path.is_absolute() or ".." in path.parts or not path.parts:
+                raise RenderError(f"unsafe template {label} path for {name!r}: {path}")
+        if spec.source.suffix != ".template":
+            raise RenderError(f"template source must end in .template: {spec.source}")
+        if spec.syntax not in {"json", "toml"}:
+            raise RenderError(f"unknown template syntax for {name!r}: {spec.syntax!r}")
+        if spec.admin_only != (name == "codex_requirements"):
+            raise RenderError(f"template admin-only classification mismatch for {name!r}")
+        if not spec.placeholders:
+            raise RenderError(f"template {name!r} must declare placeholders")
+        if spec.source in sources:
+            raise RenderError(f"duplicate template source: {spec.source}")
+        if spec.artifact in artifacts:
+            raise RenderError(f"duplicate adapter artifact: {spec.artifact}")
+        sources.add(spec.source)
+        artifacts.add(spec.artifact)
+
+        template_path = TEMPLATE_ROOT.joinpath(*spec.source.parts)
+        try:
+            template = template_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RenderError(
+                f"cannot read adapter template {spec.source}: {exc.strerror}"
+            ) from exc
+        tokens = TEMPLATE_TOKEN.findall(template)
+        if len(tokens) != len(set(tokens)):
+            raise RenderError(f"duplicate placeholder in template {spec.source}")
+        found = set(tokens)
+        if found != set(spec.placeholders):
+            missing = sorted(set(spec.placeholders) - found)
+            unknown = sorted(found - set(spec.placeholders))
+            detail = []
+            if missing:
+                detail.append("missing " + ", ".join(missing))
+            if unknown:
+                detail.append("unknown " + ", ".join(unknown))
+            raise RenderError(
+                f"template placeholder mismatch for {spec.source}: " + "; ".join(detail)
+            )
+
+
+def _render_template(spec: TemplateSpec, replacements: Mapping[str, str]) -> bytes:
+    if set(replacements) != set(spec.placeholders):
+        missing = sorted(set(spec.placeholders) - set(replacements))
+        unknown = sorted(set(replacements) - set(spec.placeholders))
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if unknown:
+            detail.append("unknown " + ", ".join(unknown))
+        raise RenderError(
+            f"replacement mismatch for template {spec.source}: " + "; ".join(detail)
+        )
+    try:
+        template = TEMPLATE_ROOT.joinpath(*spec.source.parts).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RenderError(f"cannot read adapter template {spec.source}: {exc.strerror}") from exc
+    rendered = template
+    for name in sorted(replacements):
+        rendered = rendered.replace(f"@@{name}@@", replacements[name])
+    if any(f"@@{name}@@" in rendered for name in spec.placeholders):
+        raise RenderError(f"unresolved placeholder in template {spec.source}")
+    if not rendered.endswith("\n"):
+        rendered += "\n"
+    try:
+        if spec.syntax == "json":
+            json.loads(rendered)
+        else:
+            tomllib.loads(rendered)
+    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise RenderError(f"rendered {spec.source} is invalid {spec.syntax}: {exc}") from exc
+    return rendered.encode("utf-8")
+
+
+def _json_fragment(value: Any, indentation: int) -> str:
+    fragment = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True)
+    return fragment.replace("\n", "\n" + (" " * indentation))
+
+
+def _preflight_command(policy: dict[str, Any]) -> str:
+    """Build a shell preflight that stops a client before its first model turn."""
+
+    clauses = []
+    for name in required_environment(policy):
+        value = f'"${{{name}:-}}"'
+        clauses.append(f"[ -z {value} ]")
+        for placeholder in (
+            f"${name}",
+            f"${{{name}}}",
+            f"Bearer ${name}",
+            f"Bearer ${{{name}}}",
+            f"@@{name}@@",
+        ):
+            clauses.append(f"[ {value} = {shlex.quote(placeholder)} ]")
+    response = json.dumps(
+        {
+            "continue": False,
+            "stopReason": (
+                "Zabin MCP credentials are missing or unresolved. The checked-in project "
+                "adapter is a convenience default, not managed enforcement; administrators "
+                "must deploy managed policy separately."
+            ),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return (
+        "if "
+        + " || ".join(clauses)
+        + f"; then printf '%s\\n' {shlex.quote(response)}; fi"
+    )
 
 
 def _qualified_tool(server_key: str, tool_name: str) -> str:
@@ -297,9 +571,24 @@ def _render_claude(policy: dict[str, Any]) -> dict[PurePosixPath, bytes]:
                 permissions["deny"].append(rule)
     for rules in permissions.values():
         rules.sort()
+    mcp_spec = TEMPLATES["claude_mcp"]
+    settings_spec = TEMPLATES["claude_settings"]
     return {
-        PurePosixPath(".mcp.json"): _json_bytes({"mcpServers": mcp_servers}),
-        PurePosixPath(".claude/settings.json"): _json_bytes({"permissions": permissions}),
+        mcp_spec.artifact: _render_template(
+            mcp_spec,
+            {"MCP_SERVERS": _json_fragment(mcp_servers, 2)},
+        ),
+        settings_spec.artifact: _render_template(
+            settings_spec,
+            {
+                "ALLOW_RULES": _json_fragment(permissions["allow"], 4),
+                "ASK_RULES": _json_fragment(permissions["ask"], 4),
+                "DENY_RULES": _json_fragment(permissions["deny"], 4),
+                "PREFLIGHT_COMMAND": json.dumps(
+                    _preflight_command(policy), ensure_ascii=True
+                ),
+            },
+        ),
     }
 
 
@@ -312,7 +601,7 @@ def _toml_array(values: Sequence[str]) -> str:
 
 
 def _render_codex(policy: dict[str, Any]) -> dict[PurePosixPath, bytes]:
-    lines = ["# Generated from config/zabin-mcp.json; do not edit.", ""]
+    lines: list[str] = []
     for server in _ordered_servers(policy):
         adapter = _adapter_for(server, "codex")
         key = adapter["server_key"]
@@ -329,6 +618,8 @@ def _render_codex(policy: dict[str, Any]) -> dict[PurePosixPath, bytes]:
                 f"enabled_tools = {_toml_array(enabled)}",
                 f"disabled_tools = {_toml_array(disabled)}",
                 f"default_tools_approval_mode = {_toml_string(default_mode)}",
+                "enabled = true",
+                "required = true",
                 "",
             ]
         )
@@ -342,7 +633,38 @@ def _render_codex(policy: dict[str, Any]) -> dict[PurePosixPath, bytes]:
                     "",
                 ]
             )
-    return {PurePosixPath(".codex/config.toml"): ("\n".join(lines)).encode("utf-8")}
+    spec = TEMPLATES["codex_config"]
+    return {
+        spec.artifact: _render_template(
+            spec,
+            {
+                "MCP_SERVERS": "\n".join(lines).rstrip(),
+                "PREFLIGHT_COMMAND": _toml_string(_preflight_command(policy)),
+            },
+        )
+    }
+
+
+def _render_codex_requirements(
+    policy: dict[str, Any],
+) -> dict[PurePosixPath, bytes]:
+    lines: list[str] = []
+    for server in _ordered_servers(policy):
+        key = _adapter_for(server, "codex")["server_key"]
+        lines.extend(
+            [
+                f"[mcp_servers.{_toml_string(key)}]",
+                f"identity = {{ url = {_toml_string(server['transport']['url'])} }}",
+                "",
+            ]
+        )
+    spec = TEMPLATES["codex_requirements"]
+    return {
+        spec.artifact: _render_template(
+            spec,
+            {"MCP_SERVER_IDENTITIES": "\n".join(lines).rstrip()},
+        )
+    }
 
 
 TARGETS: dict[str, TargetSpec] = {
@@ -362,6 +684,14 @@ TARGETS: dict[str, TargetSpec] = {
         supports_approval_policy=True,
         renderer=_render_codex,
     ),
+    "codex_admin_requirements": TargetSpec(
+        name="codex_admin_requirements",
+        artifacts=(PurePosixPath("requirements.toml"),),
+        required_fields=frozenset({"url"}),
+        supports_tool_filtering=True,
+        supports_approval_policy=True,
+        renderer=_render_codex_requirements,
+    ),
 }
 
 
@@ -377,8 +707,9 @@ def validate_target(policy: dict[str, Any], target: TargetSpec) -> None:
         raise RenderError(
             f"target {target.name!r} cannot express " + " and ".join(missing_capabilities)
         )
+    policy_target = "codex" if target.name == "codex_admin_requirements" else target.name
     for server in policy["servers"]:
-        adapter = _adapter_for(server, target.name)
+        adapter = _adapter_for(server, policy_target)
         fields = set(adapter["required_fields"])
         missing = target.required_fields - fields
         if missing:
@@ -393,6 +724,8 @@ def render_target(policy: dict[str, Any], target_name: str) -> dict[PurePosixPat
         target = TARGETS[target_name]
     except KeyError as exc:
         raise RenderError(f"unknown target: {target_name!r}") from exc
+    validate_template_manifest()
+    validate_server_identities(policy)
     validate_target(policy, target)
     artifacts = target.renderer(policy)
     if tuple(sorted(artifacts)) != tuple(sorted(target.artifacts)):
@@ -407,15 +740,19 @@ def _safe_destination(output_dir: Path, relative_path: PurePosixPath) -> Path:
 
 
 def write_artifacts(output_dir: Path, artifacts: Mapping[PurePosixPath, bytes]) -> None:
-    """Atomically replace rendered artifacts after all content is available."""
+    """Transactionally replace a rendered artifact set after staging every file."""
 
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    for relative_path, content in sorted(artifacts.items(), key=lambda item: item[0].as_posix()):
-        destination = _safe_destination(output_dir, relative_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary: Path | None = None
-        try:
+    ordered = sorted(artifacts.items(), key=lambda item: item[0].as_posix())
+    staged: dict[Path, Path] = {}
+    backups: dict[Path, Path | None] = {}
+    replaced: list[Path] = []
+    install_succeeded = False
+    try:
+        for relative_path, content in ordered:
+            destination = _safe_destination(output_dir, relative_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 mode="wb", prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent, delete=False
             ) as handle:
@@ -423,11 +760,49 @@ def write_artifacts(output_dir: Path, artifacts: Mapping[PurePosixPath, bytes]) 
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
+            staged[destination] = temporary
+
+        for destination, temporary in list(staged.items()):
+            backup: Path | None = None
+            if destination.exists():
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    prefix=f".{destination.name}.",
+                    suffix=".backup",
+                    dir=destination.parent,
+                    delete=False,
+                ) as handle:
+                    backup = Path(handle.name)
+                backup.unlink()
+                os.replace(destination, backup)
+            backups[destination] = backup
             os.replace(temporary, destination)
-            temporary = None
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+            replaced.append(destination)
+            staged.pop(destination)
+        install_succeeded = True
+    except OSError as exc:
+        rollback_errors = []
+        for destination in reversed(list(backups)):
+            backup = backups[destination]
+            try:
+                if backup is None:
+                    if destination in replaced:
+                        destination.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, destination)
+                    backups[destination] = None
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{destination}: {rollback_exc.strerror}")
+        detail = f"cannot install adapter artifacts: {exc.strerror}"
+        if rollback_errors:
+            detail += "; rollback failed for " + ", ".join(rollback_errors)
+        raise RenderError(detail) from exc
+    finally:
+        for temporary in staged.values():
+            temporary.unlink(missing_ok=True)
+        for backup in backups.values():
+            if install_succeeded and backup is not None:
+                backup.unlink(missing_ok=True)
 
 
 def check_artifacts(
@@ -463,6 +838,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
     parser.add_argument("--target", required=True, choices=sorted(TARGETS))
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--admin-deployment",
+        action="store_true",
+        help="authorize the separate admin-only requirements.toml staging workflow",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="render to stdout without writing")
     mode.add_argument("--check", action="store_true", help="fail if output differs without writing")
@@ -472,10 +852,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        is_admin_target = args.target == "codex_admin_requirements"
+        if is_admin_target != args.admin_deployment:
+            if is_admin_target:
+                raise RenderError(
+                    "codex_admin_requirements requires explicit --admin-deployment authorization"
+                )
+            raise RenderError(
+                "--admin-deployment is valid only with codex_admin_requirements"
+            )
         policy = load_and_validate_policy(args.policy, args.schema)
-        missing = missing_environment(policy, os.environ if environ is None else environ)
-        if missing:
-            raise RenderError("missing required environment variables: " + ", ".join(missing))
+        if not is_admin_target:
+            missing = missing_environment(policy, os.environ if environ is None else environ)
+            if missing:
+                raise RenderError("missing required environment variables: " + ", ".join(missing))
         artifacts = render_target(policy, args.target)
         if args.dry_run:
             sys.stdout.write(dry_run_manifest(args.target, artifacts))

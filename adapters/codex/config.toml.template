@@ -1,0 +1,11 @@
+# Generated project defaults from config/zabin-mcp.json; do not edit.
+# This checked-in adapter is a convenience default, not managed enforcement.
+# Administrators must deploy and validate requirements.toml separately.
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = @@PREFLIGHT_COMMAND@@
+
+@@MCP_SERVERS@@

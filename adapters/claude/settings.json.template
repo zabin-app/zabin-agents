@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": @@PREFLIGHT_COMMAND@@,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": @@ALLOW_RULES@@,
+    "ask": @@ASK_RULES@@,
+    "deny": @@DENY_RULES@@
+  }
+}

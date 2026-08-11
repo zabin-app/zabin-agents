@@ -95,6 +95,16 @@ class RenderAdapterTests(unittest.TestCase):
         mcp = json.loads(artifacts[PurePosixPath(".mcp.json")])
         settings = json.loads(artifacts[PurePosixPath(".claude/settings.json")])
         self.assertEqual(set(self.fixture["expected_server_keys"]), set(mcp["mcpServers"]))
+        for server in self.policy["servers"]:
+            key = server["identity"]["client_server_key"]
+            rendered = mcp["mcpServers"][key]
+            self.assertEqual("http", rendered["type"])
+            self.assertEqual(server["transport"]["url"], rendered["url"])
+            self.assertEqual(
+                f"Bearer ${{{server['credential']['name']}}}",
+                rendered["headers"]["Authorization"],
+            )
+            self.assertNotIn("oauth", rendered)
         all_rules = sum(settings["permissions"].values(), [])
         canonical_count = sum(len(server["tools"]) for server in self.policy["servers"])
         self.assertEqual(canonical_count, len(all_rules))
@@ -111,6 +121,12 @@ class RenderAdapterTests(unittest.TestCase):
             [path.as_posix() for path in artifacts],
         )
         config = tomllib.loads(artifacts[PurePosixPath(".codex/config.toml")].decode("utf-8"))
+        for server in self.policy["servers"]:
+            key = server["identity"]["client_server_key"]
+            rendered = config["mcp_servers"][key]
+            self.assertEqual(server["transport"]["url"], rendered["url"])
+            self.assertEqual(server["credential"]["name"], rendered["bearer_token_env_var"])
+            self.assertNotIn("command", rendered)
         worker = config["mcp_servers"]["zabin-worker"]
         self.assertEqual(self.fixture["expected_worker_tools"], worker["enabled_tools"])
         self.assertEqual([], worker["disabled_tools"])
@@ -128,8 +144,241 @@ class RenderAdapterTests(unittest.TestCase):
             {name: settings["approval_mode"] for name, settings in worker["tools"].items()},
         )
         self.assertEqual("ZABIN_MCP_WORKER_TOKEN", worker["bearer_token_env_var"])
+        self.assertTrue(worker["required"])
+        self.assertTrue(worker["enabled"])
+        self.assertNotIn("auth", worker)
+        self.assertNotIn("oauth_resource", worker)
+        self.assertNotIn("scopes", worker)
         for secret in ENVIRONMENT.values():
             self.assertNotIn(secret, artifacts[PurePosixPath(".codex/config.toml")].decode())
+
+    def test_template_manifest_is_strict_and_complete(self) -> None:
+        render_adapters.validate_template_manifest()
+
+        unknown = dict(render_adapters.TEMPLATES)
+        unknown["unexpected"] = next(iter(unknown.values()))
+        with self.assertRaisesRegex(render_adapters.RenderError, "unknown unexpected"):
+            render_adapters.validate_template_manifest(unknown)
+
+        duplicate_source = dict(render_adapters.TEMPLATES)
+        duplicate_source["codex_config"] = replace(
+            duplicate_source["codex_config"],
+            source=duplicate_source["claude_mcp"].source,
+        )
+        with self.assertRaisesRegex(render_adapters.RenderError, "duplicate template source"):
+            render_adapters.validate_template_manifest(duplicate_source)
+
+        wrong_placeholders = dict(render_adapters.TEMPLATES)
+        wrong_placeholders["claude_mcp"] = replace(
+            wrong_placeholders["claude_mcp"],
+            placeholders=frozenset({"MCP_SERVERS", "UNKNOWN"}),
+        )
+        with self.assertRaisesRegex(render_adapters.RenderError, "missing UNKNOWN"):
+            render_adapters.validate_template_manifest(wrong_placeholders)
+
+    def test_json_and_toml_escaping_round_trip(self) -> None:
+        values = ['quote"', "backslash\\", "line\nbreak", "snowman \u2603"]
+        json_fragment = render_adapters._json_fragment(values, 2)
+        self.assertEqual(values, json.loads(json_fragment))
+        toml = "values = " + render_adapters._toml_array(values) + "\n"
+        self.assertEqual(values, tomllib.loads(toml)["values"])
+
+    def test_duplicate_unknown_and_empty_policy_entries_fail_closed(self) -> None:
+        duplicate_tool = copy.deepcopy(self.policy)
+        duplicate_tool["servers"][0]["tools"].append(
+            copy.deepcopy(duplicate_tool["servers"][0]["tools"][0])
+        )
+        with self.assertRaisesRegex(render_adapters.RenderError, "duplicate canonical tool"):
+            render_adapters.validate_server_identities(duplicate_tool)
+
+        unknown_gate = copy.deepcopy(self.policy)
+        unknown_gate["servers"][0]["approval_policy"]["human_gates"].append("not_a_tool")
+        with self.assertRaisesRegex(render_adapters.RenderError, "unknown tools"):
+            render_adapters.validate_server_identities(unknown_gate)
+
+        duplicate_adapter = copy.deepcopy(self.policy)
+        duplicate_adapter["servers"][0]["adapter_requirements"][1] = copy.deepcopy(
+            duplicate_adapter["servers"][0]["adapter_requirements"][0]
+        )
+        with self.assertRaisesRegex(render_adapters.RenderError, "exactly one adapter"):
+            render_adapters.validate_server_identities(duplicate_adapter)
+
+        empty_tools = copy.deepcopy(self.policy)
+        empty_tools["servers"][1]["tools"] = []
+        with self.assertRaisesRegex(render_adapters.RenderError, "must not be empty"):
+            render_adapters.validate_server_identities(empty_tools)
+
+    def test_empty_enabled_allowlist_and_deny_precedence_remain_restrictive(self) -> None:
+        denied = copy.deepcopy(self.policy)
+        worker_policy = next(server for server in denied["servers"] if server["surface"] == "worker")
+        for tool in worker_policy["tools"]:
+            tool["approval"] = "deny"
+
+        codex = tomllib.loads(
+            render_adapters.render_target(denied, "codex")[
+                PurePosixPath(".codex/config.toml")
+            ].decode("utf-8")
+        )["mcp_servers"]["zabin-worker"]
+        expected = sorted(tool["name"] for tool in worker_policy["tools"])
+        self.assertEqual([], codex["enabled_tools"])
+        self.assertEqual(expected, codex["disabled_tools"])
+        self.assertNotIn("tools", codex)
+
+        claude = json.loads(
+            render_adapters.render_target(denied, "claude_code")[
+                PurePosixPath(".claude/settings.json")
+            ]
+        )["permissions"]
+        worker_rules = {
+            f"mcp__zabin-worker__{tool['name']}" for tool in worker_policy["tools"]
+        }
+        self.assertTrue(worker_rules.issubset(set(claude["deny"])))
+        self.assertTrue(worker_rules.isdisjoint(set(claude["allow"])))
+        self.assertTrue(worker_rules.isdisjoint(set(claude["ask"])))
+
+    def test_runtime_preflight_stops_missing_empty_and_literal_credentials(self) -> None:
+        claude = json.loads(
+            render_adapters.render_target(self.policy, "claude_code")[
+                PurePosixPath(".claude/settings.json")
+            ]
+        )
+        command = claude["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        codex = tomllib.loads(
+            render_adapters.render_target(self.policy, "codex")[
+                PurePosixPath(".codex/config.toml")
+            ].decode("utf-8")
+        )
+        self.assertEqual(command, codex["hooks"]["SessionStart"][0]["hooks"][0]["command"])
+
+        valid = subprocess.run(
+            ["/bin/sh", "-c", command],
+            env=ENVIRONMENT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, valid.returncode)
+        self.assertEqual("", valid.stdout)
+
+        for environment in (
+            {},
+            {**ENVIRONMENT, "ZABIN_MCP_TOKEN": ""},
+            {**ENVIRONMENT, "ZABIN_MCP_TOKEN": "${ZABIN_MCP_TOKEN}"},
+            {**ENVIRONMENT, "ZABIN_MCP_TOKEN": "Bearer $ZABIN_MCP_TOKEN"},
+        ):
+            with self.subTest(environment=environment):
+                blocked = subprocess.run(
+                    ["/bin/sh", "-c", command],
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, blocked.returncode)
+                decision = json.loads(blocked.stdout)
+                self.assertFalse(decision["continue"])
+                self.assertIn("convenience default", decision["stopReason"])
+                for secret in ENVIRONMENT.values():
+                    self.assertNotIn(secret, blocked.stdout)
+
+    def test_literal_placeholder_environment_is_rejected_without_value_disclosure(self) -> None:
+        for value in ("$ZABIN_MCP_TOKEN", "${ZABIN_MCP_TOKEN}", "Bearer ${ZABIN_MCP_TOKEN}"):
+            with self.subTest(value=value):
+                environment = {**ENVIRONMENT, "ZABIN_MCP_TOKEN": value}
+                self.assertEqual(
+                    ("ZABIN_MCP_TOKEN",),
+                    render_adapters.missing_environment(self.policy, environment),
+                )
+
+    def test_admin_requirements_are_separate_exact_and_identity_pinned(self) -> None:
+        artifacts = render_adapters.render_target(self.policy, "codex_admin_requirements")
+        self.assertEqual([PurePosixPath("requirements.toml")], list(artifacts))
+        text = artifacts[PurePosixPath("requirements.toml")].decode("utf-8")
+        self.assertIn("ADMIN ONLY", text)
+        requirements = tomllib.loads(text)
+        self.assertEqual(set(self.fixture["expected_server_keys"]), set(requirements["mcp_servers"]))
+        for server in self.policy["servers"]:
+            key = server["identity"]["client_server_key"]
+            self.assertEqual(
+                server["transport"]["url"],
+                requirements["mcp_servers"][key]["identity"]["url"],
+            )
+        for secret in ENVIRONMENT.values():
+            self.assertNotIn(secret, text)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                self.assertEqual(
+                    2,
+                    render_adapters.main(
+                        [
+                            "--target",
+                            "codex_admin_requirements",
+                            "--output-dir",
+                            temporary,
+                        ],
+                        {},
+                    ),
+                )
+            self.assertIn("requires explicit", stderr.getvalue())
+            self.assertFalse((Path(temporary) / "requirements.toml").exists())
+            self.assertEqual(
+                0,
+                render_adapters.main(
+                    [
+                        "--target",
+                        "codex_admin_requirements",
+                        "--output-dir",
+                        temporary,
+                        "--admin-deployment",
+                    ],
+                    {},
+                ),
+            )
+            self.assertTrue((Path(temporary) / "requirements.toml").is_file())
+
+    def test_ordinary_codex_install_never_touches_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            requirements = output / "requirements.toml"
+            requirements.write_text("admin-owned\n", encoding="utf-8")
+            self.assertEqual(
+                0,
+                render_adapters.main(
+                    ["--target", "codex", "--output-dir", temporary],
+                    ENVIRONMENT,
+                ),
+            )
+            self.assertEqual("admin-owned\n", requirements.read_text(encoding="utf-8"))
+            self.assertTrue((output / ".codex" / "config.toml").is_file())
+
+    def test_failed_artifact_install_rolls_back_without_partial_output(self) -> None:
+        artifacts = render_adapters.render_target(self.policy, "claude_code")
+        real_replace = os.replace
+
+        def fail_last(source: os.PathLike[str], destination: os.PathLike[str]) -> None:
+            if Path(source).suffix == ".tmp" and Path(destination).name == ".mcp.json":
+                raise OSError(5, "injected write failure")
+            real_replace(source, destination)
+
+        with tempfile.TemporaryDirectory() as temporary, mock.patch(
+            "scripts.render_adapters.os.replace", side_effect=fail_last
+        ):
+            output = Path(temporary)
+            originals = {}
+            for path in artifacts:
+                destination = output.joinpath(*path.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                original = f"original:{path.as_posix()}\n".encode()
+                destination.write_bytes(original)
+                originals[path] = original
+            with self.assertRaisesRegex(render_adapters.RenderError, "cannot install"):
+                render_adapters.write_artifacts(output, artifacts)
+            for path, original in originals.items():
+                self.assertEqual(original, output.joinpath(*path.parts).read_bytes())
+            self.assertFalse(list(output.rglob("*.tmp")))
+            self.assertFalse(list(output.rglob("*.backup")))
 
     def test_unexpressive_target_is_refused(self) -> None:
         incomplete = replace(
