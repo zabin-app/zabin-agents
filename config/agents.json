@@ -76,7 +76,7 @@
       "description": "Maintains core project documentation within strict content boundaries.",
       "source": "agents/doc_maintainer.md",
       "model_tier": "balanced",
-      "mutation_scope": {"mode": "core_docs", "write_paths": ["docs/ARCHITECTURE.md", "docs/CODE_STANDARDS.md", "docs/DEVELOPMENT.md", "docs/REVIEW_FOCUS.md"], "deny_paths": ["src/**", "tests/**"], "requires_isolation": true},
+      "mutation_scope": {"mode": "core_docs", "write_paths": ["AGENTS.md", "CLAUDE.md", "docs/ARCHITECTURE.md", "docs/CODE_STANDARDS.md", "docs/DEVELOPMENT.md", "docs/REVIEW_FOCUS.md", "docs/*_ARCHITECTURE.md", "docs/*_CODE_STANDARDS.md", "docs/*_DEVELOPMENT.md"], "deny_paths": ["src/**", "tests/**"], "requires_isolation": true},
       "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "shell.run"],
       "input_schema": {"type": "object", "required": ["objective", "write_files"], "properties": {"objective": {"type": "string"}, "write_files": {"type": "array"}, "evidence": {"type": "array"}}, "additionalProperties": false},
       "output_schema": {"type": "object", "required": ["status", "summary", "files_changed"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}}, "additionalProperties": false},
