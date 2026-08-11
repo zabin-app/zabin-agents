@@ -1,97 +1,104 @@
 # Docs Explore
 
-Explore a codebase in parallel (one agent per subsystem) and return a compact, architecture-altitude map per subsystem, plus a flat-vs-hub-and-spoke recommendation. Feeds a docs rebuild — does NOT write docs.
+Explore a codebase in parallel, one bounded research role per subsystem, and return compact architecture-altitude maps plus a flat-versus-hub-and-spoke recommendation. This runbook is read-only and feeds [docs-sync](../../docs-sync/SKILL.md); it never writes documentation or creates worktrees.
 
-**When to use:** Followed by the `docs-sync` skill to ground a compact docs rebuild in the current code. Use when core docs have drifted or bloated and need reconstruction rather than incremental edits.
+## Inputs and preconditions
 
-**Phases:**
-1. **Explore** — workhorse-tier explorer per subsystem builds a compact map (the map is the deliverable)
-2. **Trim** — workhorse-tier altitude-check strips implementation detail from each map
+Input:
 
-## Inputs
-
-`subsystems: [{ label, path }]` — the docs-sync skill discovers these from manifests/top-level dirs.
-
-If no subsystems are provided, return immediately: `{ maps: [], recommendedStructure: "flat", rationale: "no input" }` and log "No subsystems provided — nothing to explore."
-
-## Procedure
-
-Executed by the conductor (or the `docs-sync` skill acting as conductor) issuing `delegate` calls directly from the main loop, one pair (explore → trim) per subsystem.
-
-### Stage 1 — Explore (parallel, one per subsystem, workhorse tier)
-
-For each subsystem, dispatch:
-
-```
-delegate(source: "codebase_researcher", provider: "chatgpt_codex", model: "gpt-5.6-terra",
-  instructions: "Explore the subsystem at `<path>` (<label>) and produce a COMPACT, architecture-altitude map of it.
-
-Capture: its responsibility, the handful of key modules (one line each — not every file), what it depends on, its central public types, and its high-level data flows. Note any build/run/test commands and coding conventions you observe under devSignals (those feed other docs, not ARCHITECTURE).
-
-Stay at map altitude: describe the SHAPE, not the implementation. Do NOT enumerate every file, describe private functions/fields/columns step by step, or narrate history ('Phase N'). estimatedDocLines should be a few dozen at most. Return JSON matching the Map Schema.",
-  working_dir: "<repo path>",
-  async: true)
+```json
+{"subsystems": [{"label": "string", "path": "repository-relative path"}]}
 ```
 
-**Map Schema:**
+Resolve the repository root with `git.inspect`. Before dispatch, read the [portable role registry](../../../config/agents.json) and map the semantic host operations `agent.dispatch` and `agent.wait` from the conductor's [host-capability contract](../references/host-capabilities.md). Use the registered `codebase_researcher` role and its exact input/output schemas. The registry selects the role's tier; the host resolves that tier. Do not name a client, provider, concrete model, transport-qualified tool, or host-specific spawn command in the program.
+
+Reject absolute paths, paths outside the repository, duplicate labels, and overlapping subsystem paths unless the overlap is intentional and explained by the caller. If the list is empty, return immediately:
+
+```json
+{"maps": [], "recommendedStructure": "flat", "rationale": "no input"}
+```
+
+Report `No subsystems provided — nothing to explore.`
+
+## Map schema
+
+The main loop synthesizes each successful registered research result into this shape:
+
 ```json
 {
   "subsystem": "string",
   "path": "string",
-  "responsibility": "string — 1-2 sentences: what this subsystem is for",
+  "responsibility": "one or two sentences",
   "keyModules": [
-    { "name": "string", "responsibility": "string — the handful that matter, one line each, NOT every file" }
+    {"name": "string", "responsibility": "one line"}
   ],
-  "dependencies": ["string — other subsystems/modules this one depends on"],
+  "dependencies": ["other subsystem or module"],
   "keyPublicTypes": [
-    { "name": "string", "purpose": "string — central public types/traits/interfaces, minimal, no field-level detail" }
+    {"name": "string", "purpose": "one line"}
   ],
-  "dataFlows": ["string — high-level flows, one line each"],
+  "dataFlows": ["high-level flow in one line"],
   "devSignals": {
-    "buildRunTestCommands": ["string"],
-    "conventionsObserved": ["string"]
+    "buildRunTestCommands": ["observed command"],
+    "conventionsObserved": ["observed convention"]
   },
-  "estimatedDocLines": "number — how many ARCHITECTURE lines this subsystem honestly warrants at map altitude (a few dozen, not hundreds)"
+  "estimatedDocLines": 0
 }
 ```
 
-`load(source: "<task_id>")` each explore result as it completes.
+`estimatedDocLines` is the number of architecture lines the subsystem warrants after trimming, normally a few dozen rather than hundreds.
 
-### Stage 2 — Trim (per subsystem, workhorse tier, chained after its own explore)
+## Procedure
 
-For each subsystem's returned map, dispatch a trim pass:
+### 1. Dispatch bounded research in parallel
 
-```
-delegate(source: none, provider: "chatgpt_codex", model: "gpt-5.6-terra",
-  instructions: "Here is a draft architecture map for subsystem \"<label>\":
-
-<map JSON>
-
-Trim it to architecture altitude. REMOVE: any keyModule/type that is private implementation detail, any step-by-step or field/column-level description, any per-file enumeration, and any historical/'Phase N' framing. Keep responsibilities to one tight line. Return the trimmed map in the same Map Schema; lower estimatedDocLines if you cut substantially.",
-  async: true)
-```
-
-If a subsystem's explore delegate failed/returned nothing, skip it entirely (no trim call, not included in output).
-
-## Output
+For each subsystem, validate this exact registered role input before calling `agent.dispatch`:
 
 ```json
 {
-  "maps": ["all successfully trimmed per-subsystem maps"],
+  "objective": "Produce evidence for a compact architecture-altitude map of the named subsystem: its responsibility, handful of key modules, dependencies, central public types, high-level data flows, and observed development commands or conventions. Omit private implementation detail, per-file tours, field-level descriptions, step-by-step algorithms, and historical narrative.",
+  "scope": ["<subsystem path>"],
+  "context": {
+    "subsystem_label": "<label>",
+    "deliverable": "docs-explore map evidence"
+  }
+}
+```
+
+Issue all independent dispatches before waiting. Bind each dispatch to the same repository and read-only role scope. Retain the dispatch id, subsystem label, and path in main-loop state; do not put host metadata into the closed role input.
+
+Collect results with `agent.wait` using bounded host monitoring. Validate every untouched result against the registered `codebase_researcher` output schema. A missing, timed-out, cancelled, partial-without-evidence, or schema-invalid result fails that subsystem closed.
+
+### 2. Synthesize and trim in the main loop
+
+For each successful research result:
+
+1. Build one map only from cited repository evidence. Put uncertainty in the run summary rather than inventing a field value.
+2. Keep only modules and public types needed to explain the subsystem's shape.
+3. Remove private symbols, field or column detail, file-by-file inventories, algorithms, recovery/idempotency walkthroughs, dates, and “Phase N” history.
+4. Keep responsibilities and flows to one line each. Preserve observed commands and conventions only under `devSignals`; they do not belong in architecture prose.
+5. Estimate the resulting architecture footprint and validate the map against the schema above.
+
+This deterministic main-loop trim replaces an unregistered free-form second agent. Agents never dispatch other agents, and no child result is accepted under an invented output contract.
+
+## Output and recommendation
+
+Return:
+
+```json
+{
+  "maps": ["successfully synthesized maps"],
   "recommendedStructure": "flat | hub-and-spoke",
   "rationale": "string"
 }
 ```
 
-**Recommendation rule:** compute `totalLines = sum(map.estimatedDocLines)` across all maps. If `maps.length > 1 AND totalLines > 450` → `hub-and-spoke` (rationale: "`<N>` subsystems totalling ~`<totalLines>` lines exceed a single 500-line doc; split into per-subsystem spokes with a linked index."). Otherwise → `flat` (rationale: "Material fits one flat doc set (~`<totalLines>` lines).").
+Compute `totalLines = sum(map.estimatedDocLines)`. If more than one map succeeds and `totalLines > 450`, recommend `hub-and-spoke` because the material would approach the 500-line hard cap. Otherwise recommend `flat`.
 
-Log: `"docs-explore: <N> subsystem maps, ~<totalLines> estimated ARCHITECTURE lines → recommend <recommendedStructure>"`.
+Report `docs-explore: <N> subsystem maps, ~<totalLines> estimated ARCHITECTURE lines → recommend <structure>`.
 
 ## Failure semantics
 
-- A subsystem whose explore delegate fails is dropped entirely from `maps` (not retried, not included with partial data) — the recommendation is computed only over the subsystems that succeeded.
-- A subsystem whose trim delegate fails: fall back to the untrimmed explore result for that subsystem rather than dropping it, since the explore output is still usable material for the rebuild (note this deviation to the user if it occurs).
-
-## Worktree behavior
-
-None — this runbook only reads the codebase; no worktrees are created. It never writes any doc files; writing is done later by `doc_maintainer` in the `docs-sync` skill's main loop.
+- Drop a failed subsystem entirely; never include partial or fabricated map data.
+- If every subsystem fails, return an empty `maps` array, recommend `flat`, and explain that no documentation rebuild may proceed from unverified maps.
+- Preserve caveats and dispatch failures in the run summary so `docs-sync` can pause rather than overwrite docs from incomplete evidence.
+- A missing safe mapping for either `agent.dispatch` or `agent.wait` is a blocking host-capability error.

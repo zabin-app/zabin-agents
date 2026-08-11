@@ -4,34 +4,24 @@ Content boundary definitions for project documentation. This is the single sourc
 
 ---
 
-## Content Boundary Quick Reference
+## Managed Set and Content Ownership
 
-| Content Type | ARCHITECTURE | CODE_STANDARDS | DEVELOPMENT |
-|---|---|---|---|
-| System overview / TL;DR | YES | NO | NO |
-| Module/component descriptions | YES | NO | NO |
-| Layer dependencies | YES | NO | NO |
-| Data flow diagrams | YES | NO | NO |
-| Key type signatures (minimal) | YES | YES (full) | NO |
-| Architecture diagrams (ASCII/text) | YES | NO | NO |
-| Code samples / DO-DON'T patterns | NO | YES | NO |
-| Naming conventions | NO | YES | NO |
-| Anti-patterns with examples | NO | YES | NO |
-| Error handling patterns | NO | YES | NO |
-| Testing patterns / test examples | NO | YES | NO |
-| Security coding practices | NO | YES | NO |
-| Logging standards | NO | YES | NO |
-| Performance guidelines | NO | YES | NO |
-| Build commands (cargo, npm, make) | NO | NO | YES |
-| Run commands / app startup | NO | NO | YES |
-| Test commands (how to run tests) | NO | NO | YES |
-| Docker / container setup | NO | NO | YES |
-| Environment variables / .env setup | NO | NO | YES |
-| Prerequisites / dependencies | NO | NO | YES |
-| CI/CD configuration | NO | NO | YES |
-| Troubleshooting / common issues | NO | NO | YES |
-| Workflow locations (plans, tasks) | NO | NO | YES |
-| Editor / tooling setup | NO | NO | YES |
+The managed set contains four document types, all subsystem variants of the first three, and both root instruction files:
+
+- `docs/ARCHITECTURE.md`, `docs/CODE_STANDARDS.md`, `docs/DEVELOPMENT.md`, `docs/REVIEW_FOCUS.md`;
+- `docs/<SUBSYSTEM>_ARCHITECTURE.md`, `docs/<SUBSYSTEM>_CODE_STANDARDS.md`, `docs/<SUBSYSTEM>_DEVELOPMENT.md`;
+- root `AGENTS.md` and root `CLAUDE.md`.
+
+| Content type | Canonical owner |
+|---|---|
+| System overview, modules, dependencies, flows, minimal key types | `ARCHITECTURE.md` |
+| Idioms, naming, error handling, tests, coding anti-patterns | `CODE_STANDARDS.md` |
+| Prerequisites, environment, build/run/test commands, CI, troubleshooting | `DEVELOPMENT.md` |
+| Project-specific review priorities, hot spots, severity calibration | `REVIEW_FOCUS.md` |
+| Repository-specific agent guardrails and documentation routing | root `AGENTS.md` |
+| Compatibility import only | root `CLAUDE.md` |
+
+A fact appears in its owner once. Every other managed file links to the owner rather than restating it. In particular, commands live only in `DEVELOPMENT.md` and repository guardrails live only in root `AGENTS.md`.
 
 ---
 
@@ -44,9 +34,10 @@ Core docs are **maps, not the territory**. They have hard size budgets, because 
 | `ARCHITECTURE.md` / `CODE_STANDARDS.md` / `DEVELOPMENT.md` (flat, or a hub-and-spoke spoke) | ≤ 350 | **500** | compact, or split to hub-and-spoke |
 | Hub-and-spoke index doc | ≤ 120 | 150 | move detail into spokes |
 | `REVIEW_FOCUS.md` | ≤ 150 | 200 | prune stale hot spots; generic advice goes nowhere (reviewers already know it) |
-| `CLAUDE.md` | ≤ 80 | 100 | move detail into the core docs and link |
+| `AGENTS.md` | ≤ 80 | 100 | move commands/content into the owning core doc and link |
+| `CLAUDE.md` | one nonblank line | one nonblank line | replace with `@AGENTS.md` |
 
-- **Target** = healthy size. **Hard cap** = a doc at or above this is a defect (validator Error). Splitting to hub-and-spoke is the expected remedy once a doc legitimately needs >500 lines of content — never let one doc absorb it all.
+- **Target** = healthy size. **Hard cap** = a doc over this value is a defect (validator Error). Splitting to hub-and-spoke is the expected remedy once a doc legitimately needs more than 500 lines of content — never let one doc absorb it all.
 - Updates should be **net-neutral**: adding a fact means removing what it supersedes. A doc that only ever grows is a process failure.
 
 ## Altitude & Duplication Rules (apply to all core docs)
@@ -61,28 +52,71 @@ Rule of thumb: one module gets a few sentences (responsibility + dependencies + 
 
 **Present tense / no changelog.** Core docs describe the *current* state only. Prohibited: "Phase N", "previously", "was changed to", "collapsed/refactored", migration narratives, deprecation play-by-plays, and dates. That history belongs in git.
 
-**No duplication.** Each fact lives in exactly ONE doc; other docs cross-reference it (`See docs/X.md#section`). `CLAUDE.md` in particular must be a pointer/index — a link table into the core docs plus repo-specific agent guardrails — never a copy of their content.
+**No duplication.** Each fact lives in exactly one managed file; other files cross-reference it. `AGENTS.md` links to the core docs, `DEVELOPMENT.md` owns commands, and `AGENTS.md` owns repository-specific guardrails. `CLAUDE.md` imports `AGENTS.md` and contains nothing else.
+
+---
+
+## Instruction Precedence
+
+Repository documentation never overrides live system, developer, user, or role instructions supplied by the host. Within the repository instruction layer:
+
+1. a path-scoped `AGENTS.md` applies to its subtree and takes precedence over an ancestor `AGENTS.md` for that scope;
+2. root `AGENTS.md` is the canonical repository-wide instruction source and routes topic detail to the managed docs;
+3. the owning managed doc is canonical for architecture, coding standards, development commands, or review focus, but cannot override an applicable `AGENTS.md` guardrail;
+4. root `CLAUDE.md` has no independent authority; it imports root `AGENTS.md` verbatim through the host's supported import directive.
+
+Conflicting copies are defects, not precedence mechanisms. Resolve them by retaining the statement in its canonical owner and replacing other copies with links.
+
+---
+
+## Document Type: AGENTS.md
+
+### Purpose
+The canonical repository instruction entry point. It orients an agent, declares repository-specific guardrails, and routes topic detail to the managed docs. It is a lean index, not a copy of those docs.
+
+### Required Content
+- One-paragraph project description.
+- Links to all four managed doc types that exist for the selected structure.
+- A pointer to `DEVELOPMENT.md` for commands, without copying the commands.
+- Repo-specific agent guardrails that live nowhere else.
+
+### Prohibited Content
+- Commands, command fences, or environment setup copied from `DEVELOPMENT.md`.
+- Architecture inventories, coding standards, or review guidance copied from a core doc.
+- Generic platform, model, provider, or transport instructions supplied by a higher authority.
+- A second copy of a guardrail already present in a path-scoped `AGENTS.md` for the same scope.
+
+### Detection Heuristics (for validation)
+- Length > 100 lines → almost certainly duplicating doc content.
+- Headed sections that mirror core-doc sections (e.g. "Module Structure", "Naming Conventions", "Build Commands") with their own prose rather than a link → duplication.
+- Shell fences or recognized build/run/test commands → command duplication; move them to `DEVELOPMENT.md`.
+- Guardrail prose repeated in another managed file → duplication; keep it only in `AGENTS.md`.
 
 ---
 
 ## Document Type: CLAUDE.md
 
 ### Purpose
-The agent entry point at the repo root. Orients an agent and routes it to the right doc. A lean **index**, never a content store.
+
+A compatibility wrapper for hosts that discover `CLAUDE.md`. It delegates entirely to canonical root `AGENTS.md`.
 
 ### Required Content
-- One-paragraph project description.
-- A link table to the core docs (architecture / code standards / development).
-- A few must-know commands, or a pointer to `DEVELOPMENT.md`.
-- Repo-specific agent guardrails that live nowhere else.
+
+The sole nonblank line is exactly:
+
+```text
+@AGENTS.md
+```
 
 ### Prohibited Content
-- Any prose copied from ARCHITECTURE/CODE_STANDARDS/DEVELOPMENT (link instead).
-- Module inventories, coding standards, or build instructions duplicated from the core docs.
+
+Everything else: frontmatter, headings, prose, commands, guardrails, links tables, additional imports, and client-specific alternatives.
 
 ### Detection Heuristics (for validation)
-- Length > 100 lines → almost certainly duplicating doc content.
-- Headed sections that mirror core-doc sections (e.g. "Module Structure", "Naming Conventions", "Build Commands") with their own prose rather than a link → duplication.
+
+- Strip blank lines and line endings. The remaining line array must equal `["@AGENTS.md"]`.
+- A missing root `AGENTS.md` makes the wrapper target unresolved.
+- Any content shared with `AGENTS.md` or a core doc is duplication in addition to a wrapper-shape violation.
 
 ---
 
@@ -229,6 +263,27 @@ Project-specific review guidance consumed by the review agents (`review-diff` di
 
 ---
 
+## Normative Validation Fixtures
+
+Validator implementations and manual audits use these minimal fixtures to prove root precedence, wrapper shape, duplication, size, and content-boundary behavior. A fixture may omit unrelated required sections only when the asserted check is isolated; a full audit reports those omissions separately.
+
+| Fixture | Relevant files/content | Expected finding |
+|---|---|---|
+| Canonical root pair | `AGENTS.md` links to core docs; `CLAUDE.md` is `@AGENTS.md` | Root checks pass |
+| Missing canonical root | `CLAUDE.md` imports `@AGENTS.md`; no `AGENTS.md` | Error: missing canonical root and unresolved import |
+| Wrapper prose | `CLAUDE.md` contains `@AGENTS.md` plus a heading or command | Error: wrapper-shape violation; duplication when content has another owner |
+| Command in root instructions | `AGENTS.md` repeats a command present in `DEVELOPMENT.md` | Error: cross-file command duplication; keep it only in development docs |
+| Guardrail outside canonical root | Same repository guardrail in `AGENTS.md` and a core doc | Error: cross-file guardrail duplication; keep it only in `AGENTS.md` |
+| Precedence conflict | `AGENTS.md` forbids an operation while a managed doc directs it | Error: contradictory lower-precedence instruction |
+| Boundary leak | `ARCHITECTURE.md` contains a build command | Error or Warning according to the architecture rule, with owning doc identified |
+| Root over cap | `AGENTS.md` has more than 100 lines | Error; compact to links and unique guardrails |
+| Review-focus over cap | `REVIEW_FOCUS.md` has more than 200 lines | Error; prune generic or stale material |
+| Broken spoke link | Hub index links to a missing subsystem doc | Error: unresolved managed-doc link |
+
+Portability fixtures also scan the documentation-policy sources themselves. They fail if an orchestration example contains a concrete provider/model name, a transport-qualified tool name, or a client-specific spawn/load command instead of registered semantic host capabilities.
+
+---
+
 ## Flat vs Hub-and-Spoke
 
 ### When to Use Flat
@@ -300,6 +355,35 @@ docs/
 ---
 
 ## Scaffolding Templates
+
+### Root instruction pair
+
+`AGENTS.md` is project-specific but keeps this ownership shape:
+
+```markdown
+# <Project Name>
+
+<One short project orientation paragraph.>
+
+## Documentation
+
+| Topic | Canonical document |
+|---|---|
+| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Code standards | [docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md) |
+| Development commands and setup | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Review focus | [docs/REVIEW_FOCUS.md](docs/REVIEW_FOCUS.md) |
+
+## Repository Guardrails
+
+- <Only guardrails unique to this repository; do not repeat commands or core-doc prose.>
+```
+
+`CLAUDE.md` is always:
+
+```text
+@AGENTS.md
+```
 
 ### ARCHITECTURE.md (Flat)
 

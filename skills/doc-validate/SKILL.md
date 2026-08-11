@@ -1,197 +1,193 @@
 ---
 name: doc_validate
-description: Validates project documentation for structural compliance and content boundary violations. Audits ARCHITECTURE.md, CODE_STANDARDS.md, DEVELOPMENT.md, and REVIEW_FOCUS.md against document schemas. Triggers on "doc-validate", "validate docs", "audit docs", "check docs".
+description: Read-only audit of all managed project docs, subsystem variants, canonical AGENTS.md, and the CLAUDE.md import wrapper for structure, precedence, duplication, size, boundaries, and links. Triggers on "doc-validate", "validate docs", "audit docs", "check docs".
 ---
 
 # Doc Validate
 
-Audit project documentation for structural compliance and content boundary violations. This is a **read-only** skill — it reports findings but does not fix them.
+Audit the complete managed documentation set. Report evidence and actionable findings; never edit a file.
 
-## When to Use
+## Before starting
 
-- After implementation waves complete (spot check)
-- Periodically as a documentation health check
-- Before major releases
-- When documentation drift is suspected
-- After manual doc edits
+1. Resolve and read this skill's bundled [schemas.md](schemas.md) completely through the host's skill/resource mechanism. Do not assume an installation or home-directory path.
+2. Resolve the repository root with the host's git/filesystem capability.
+3. Require read/search, line-count, and link-inspection capabilities. If any required read cannot be completed, report the audit incomplete and fail toward caution.
 
-## Before Starting (Mandatory)
+The validator policy is the source of truth for ownership and budgets. Live system, developer, user, and role instructions remain higher authority than repository documentation.
 
-1. Read `~/.agents/skills/doc-validate/schemas.md` for content boundary rules
-2. Identify the project's `docs/` directory
+## 1. Discover and inventory
 
-## Workflow
+List:
 
-### Step 1: Discover
+- root `AGENTS.md` and root `CLAUDE.md` explicitly, including absence;
+- `docs/ARCHITECTURE.md`, `docs/CODE_STANDARDS.md`, `docs/DEVELOPMENT.md`, and `docs/REVIEW_FOCUS.md`, including absence;
+- every `docs/<SUBSYSTEM>_ARCHITECTURE.md`, `docs/<SUBSYSTEM>_CODE_STANDARDS.md`, and `docs/<SUBSYSTEM>_DEVELOPMENT.md`;
+- other `docs/**/*.md` files as unmanaged inventory only.
 
-Find all documentation files using your file-listing/glob tool:
+Do not treat “whichever root file exists” as sufficient. `AGENTS.md` is canonical and `CLAUDE.md` is the compatibility wrapper; both receive an explicit result.
 
+Classify the repository as hub-and-spoke when any managed subsystem variant exists; otherwise classify it as flat. Under hub-and-spoke, the three base architecture/standards/development files are indexes. `REVIEW_FOCUS.md` remains a single curated project doc unless the policy is explicitly extended.
+
+Missing-file severity:
+
+- missing root `AGENTS.md`: Error;
+- missing root `CLAUDE.md`: Error;
+- missing any of the four base managed docs: Error;
+- a missing subsystem counterpart or unlinked managed spoke: Error.
+
+## 2. Validate the root instruction model
+
+### Canonical `AGENTS.md`
+
+Verify that it:
+
+- gives a short project orientation;
+- links to all four base managed docs and, when relevant, the hub indexes;
+- points to `DEVELOPMENT.md` rather than repeating commands;
+- contains only repository-specific guardrails not duplicated elsewhere;
+- contains no core-doc section clone, command block, provider/model selection, transport-qualified tool name, or higher-authority instruction copy.
+
+### Import-only `CLAUDE.md`
+
+Normalize line endings, discard blank lines, and require the remaining line array to equal exactly:
+
+```text
+@AGENTS.md
 ```
-docs/*.md
-docs/**/*.md
-```
 
-### Step 2: Classify
+Any heading, frontmatter, prose, command, guardrail, extra import, or alternate instruction is an Error. Verify that the imported root `AGENTS.md` exists.
 
-**Determine pattern:**
-- If `docs/` contains files like `<SUBSYSTEM>_ARCHITECTURE.md` → **hub-and-spoke**
-- If only `ARCHITECTURE.md`, `CODE_STANDARDS.md`, `DEVELOPMENT.md` directly → **flat**
+### Precedence and conflict
 
-**Classify each file:**
-- **Managed** (core docs): ARCHITECTURE.md, CODE_STANDARDS.md, DEVELOPMENT.md, REVIEW_FOCUS.md + subsystem variants, and the repo-root agent instructions file (e.g. `AGENTS.md`/`CLAUDE.md`, whichever exists)
-- **Unmanaged**: TESTING.md, CONFIGURATION.md, KEYBINDINGS.md, IDEAS.md, etc.
+Check for contradictory normative statements across `AGENTS.md` and the managed docs. Apply this repository-layer order:
 
-Only validate managed docs. Report unmanaged docs as inventory only.
+1. the nearest path-scoped `AGENTS.md` for files in its subtree;
+2. root `AGENTS.md` for repository-wide guardrails;
+3. the owning core doc for architecture, standards, development, or review-focus detail;
+4. `CLAUDE.md` contributes no independent instruction.
 
-### Step 3: Validate Structure
+A lower-precedence contradiction is an Error. A repeated but non-conflicting rule is still a duplication Error: precedence does not justify copies.
 
-For each managed doc, check against the schema in `schemas.md`:
+## 3. Validate structure and content boundaries
 
-**Required sections present?**
-- ARCHITECTURE: Overview, Module Structure, Layer Dependencies, Data Flow, Key Types
-- CODE_STANDARDS: Language Idioms, Error Handling, Naming Conventions, Anti-patterns, Testing Patterns
-- DEVELOPMENT: Prerequisites, Build Commands, Run Commands, Test Commands, Environment Setup
-- REVIEW_FOCUS: Review Priorities, Known Hot Spots, Severity Calibration
+Match headings by intent rather than exact spelling.
 
-Section names may vary (e.g., "Build" vs "Build Commands") — match on intent, not exact titles.
+| Document | Required intent |
+|---|---|
+| Architecture | overview, module/component structure, layer dependencies, data flow, key types/interfaces |
+| Code standards | language idioms, error handling, naming, anti-patterns, testing patterns |
+| Development | prerequisites, build, run, tests, environment setup |
+| Review focus | review priorities, known hot spots, severity calibration |
 
-**Prohibited sections present?**
-- Check for section headers that indicate content from the wrong doc type
+Apply every prohibited-content and detection rule in `schemas.md` to each base doc and each managed spoke. Important boundary checks include:
 
-### Step 4: Validate Content Boundaries
+- architecture: no commands, coding-style sections, configuration setup, long code samples, or implementation walkthroughs;
+- code standards: no system inventory, dependency/data-flow diagrams, commands, configuration, or deployment procedure;
+- development: no architecture, style rules, feature design, or non-command implementation examples;
+- review focus: no generic review advice, architecture summary, coding rules, commands, or historical play-by-play.
 
-Scan each managed doc for content that belongs elsewhere.
+Report missing required intent as Warning unless the file is only a hub index, where links and shared overview are the intended structure. Report a clear wrong-owner section as Error and an isolated command-like line according to the policy's stated severity.
 
-**ARCHITECTURE.md violations:**
-- Code fences with language tags (` ```rust `, ` ```typescript `, ` ```python `, ` ```go `, ` ```dart `, ` ```java `) containing more than 5 lines → code sample belongs in CODE_STANDARDS
-- Lines containing build/run commands: `cargo build`, `cargo test`, `npm run`, `npm install`, `docker compose`, `docker build`, `make`, `flutter run`, `go build`, `gradle` → belongs in DEVELOPMENT
-- Sections with titles matching: "Naming", "Conventions", "Anti-pattern", "Idiom", "Code Style", "Coding Standard" → belongs in CODE_STANDARDS
+## 4. Validate size, altitude, history, and duplication
 
-**CODE_STANDARDS.md violations:**
-- Sections with titles matching: "Architecture", "Module Structure", "Layer Dependencies", "Data Flow", "System Design", "Component Overview" → belongs in ARCHITECTURE
-- Lines containing build/run commands (same list as above) → belongs in DEVELOPMENT
-- ASCII box-and-arrow diagrams describing module relationships → belongs in ARCHITECTURE
+Count physical lines for every managed file.
 
-**DEVELOPMENT.md violations:**
-- Sections with titles matching: "Naming", "Conventions", "Anti-pattern", "Idiom", "Code Style", "Coding Standard" → belongs in CODE_STANDARDS
-- Sections with titles matching: "Architecture", "Module Structure", "Layer Dependencies", "Data Flow" → belongs in ARCHITECTURE
-- Code fences with language tags (not `bash`/`shell`/`sh`/`console`/`toml`/`yaml`/`json`/`env`) containing function/struct/class definitions → code samples belong in CODE_STANDARDS
+| File class | Warning | Error |
+|---|---:|---:|
+| Flat core doc or subsystem spoke | over 350 | over 500 |
+| Hub index | over 120 | over 150 |
+| `REVIEW_FOCUS.md` | over 150 | over 200 |
+| `AGENTS.md` | over 80 | over 100 |
+| `CLAUDE.md` | n/a | anything other than one nonblank import line |
 
-**REVIEW_FOCUS.md violations:**
-- Sections with titles matching: "Naming", "Conventions", "Anti-pattern", "Code Style" → belongs in CODE_STANDARDS
-- Sections with titles matching: "Architecture", "Module Structure", "Data Flow" → belongs in ARCHITECTURE
-- Lines containing build/run commands (same list as above) → belongs in DEVELOPMENT
-- Bullets naming no project-specific module, path, type, or flow (generic review advice) → Warning: prune, reviewers already know it
+Also check:
 
-### Step 4.5: Validate Size, Altitude & Duplication
+- private-symbol explanations, step-by-step control flow, idempotency/recovery walkthroughs, and per-file tours: Warning with line range;
+- `Phase ` followed by a digit, `previously`, `was changed`, `collapsed`, `refactored to`, or deprecation narrative: Warning;
+- excessive `####`/`#####` nesting under one module: Warning;
+- duplicate or near-duplicate headings in one file: Error;
+- substantively repeated prose, commands, or guardrails across managed files: Error with both locations;
+- paraphrased duplication that links would replace: Error when it states the same normative rule, otherwise Warning when uncertain.
 
-Run `wc -l` on every managed doc and apply the budgets from `schemas.md` (*Size Budgets & Compaction*):
+Compare normalized prose semantically as well as exact repeated lines. Ignore headings, table framing, import directives, and short unavoidable project names when identifying duplication.
 
-- **Size:** flat/spoke core doc > 500 lines → **Error** (compact or split); > 350 → **Warning**. Hub-and-spoke index > 150 → Error. `REVIEW_FOCUS.md` > 200 → Error, > 150 → Warning. Root agent-instructions file > 100 → Error, > 80 → Warning.
-- **Altitude leak (prose):** scan for backtick-quoted private symbols described over multiple sentences, step-by-step algorithm/control-flow/idempotency descriptions, and per-file/per-widget "tours" → **Warning** with the line range.
-- **Changelog leak:** grep for `Phase ` + a digit, `previously`, `was changed`, `collapsed`, `refactored to`, `deprecat` → **Warning** (historical narrative belongs in git).
-- **Deep nesting:** count `####`/`#####` headings under each module; a module with many → **Warning** (deep-dive; collapse or move to a spoke).
-- **Duplicate sections:** list heading titles; same/near-same title twice → **Error**.
-- **Cross-doc / root-doc duplication:** prose in the root agent-instructions file (or one core doc) that restates another core doc instead of linking → **Warning**.
+## 5. Validate links and hub consistency
 
-When several of these fire on one doc, recommend a `docs-sync` rebuild rather than piecemeal fixes.
+For every managed Markdown link or import:
 
-### Step 5: Validate Cross-References (Hub-and-Spoke Only)
+- resolve the target relative to the containing file;
+- report missing repository-relative targets;
+- require every managed spoke to be linked from its matching base index;
+- require consistent subsystem prefixes across architecture, standards, and development spokes;
+- require all four base docs to be reachable from `AGENTS.md`;
+- require `CLAUDE.md` to resolve only root `AGENTS.md`.
 
-For hub-and-spoke projects:
-- Each index doc link resolves to an existing file
-- Every subsystem-specific doc is linked from its index
-- Subsystem naming is consistent (same prefix across all three doc types)
+External links may be inventoried without network access unless the caller explicitly authorizes external verification.
 
-### Step 6: Report
+## 6. Run normative fixture checks
 
-Output the structured audit report.
+Before reporting, apply the fixtures in `schemas.md` to the validator logic. At minimum demonstrate these decisions in the audit evidence:
 
-## Output Format
+1. canonical `AGENTS.md` plus one-line wrapper passes root shape;
+2. missing `AGENTS.md` with an importing wrapper fails;
+3. wrapper prose or a second import fails;
+4. a command repeated in `AGENTS.md` and `DEVELOPMENT.md` fails duplication;
+5. a guardrail repeated outside `AGENTS.md` fails duplication;
+6. a managed doc contradicting an applicable `AGENTS.md` fails precedence;
+7. over-cap root/review files fail size;
+8. a boundary leak and a broken spoke link are attributed to their canonical owner.
+
+These may be evaluated as in-memory or temporary-directory fixtures. Do not create fixture files in the repository. If the host cannot execute fixtures, report that verification gap instead of claiming the checks ran.
+
+## 7. Report
+
+Use this structure:
 
 ```markdown
 ## Documentation Audit Report
 
-**Project:** <project name>
+**Project:** <name>
 **Pattern:** Flat / Hub-and-Spoke
-**Managed Docs:** <count>
+**Managed Docs:** <present>/<expected>
 **Unmanaged Docs:** <count>
-**Overall Status:** PASS / VIOLATIONS FOUND
+**Overall Status:** PASS / VIOLATIONS FOUND / INCOMPLETE
 
 ### Document Inventory
+| File | Type | Present | Status |
 
-| File | Type | Managed | Status |
-|------|------|---------|--------|
-| `docs/ARCHITECTURE.md` | Architecture | Yes | PASS/FAIL |
-| `docs/CODE_STANDARDS.md` | Code Standards | Yes | PASS/FAIL |
-| `docs/DEVELOPMENT.md` | Development | Yes | PASS/FAIL |
-| `docs/REVIEW_FOCUS.md` | Review Focus | Yes | PASS/FAIL |
-| `docs/TESTING.md` | Testing | No | (not audited) |
+### Root Instruction and Precedence Issues
+| File(s) | Line(s) | Issue | Severity |
 
 ### Structural Issues
-
 | File | Issue | Severity |
-|------|-------|----------|
-| `docs/<file>` | Missing required section: <section> | Warning |
-| `docs/<file>` | Contains prohibited section: <section> | Error |
 
 ### Content Boundary Violations
+| File | Line(s) | Content | Canonical Owner | Severity |
 
-| File | Line(s) | Content Found | Belongs In | Severity |
-|------|---------|--------------|------------|----------|
-| `docs/ARCHITECTURE.md` | 45-60 | Rust code sample (15 lines) | CODE_STANDARDS.md | Error |
-| `docs/ARCHITECTURE.md` | 112 | `cargo build --release` | DEVELOPMENT.md | Warning |
-| `docs/CODE_STANDARDS.md` | 23-40 | "Module Structure" section | ARCHITECTURE.md | Error |
+### Size, Altitude, and Duplication Issues
+| File(s) | Line(s) | Lines/Cap | Issue | Severity |
 
-### Size & Altitude Issues
+### Link and Hub Issues
+| Source | Target | Issue | Severity |
 
-| File | Lines | Cap | Issue | Severity |
-|------|-------|-----|-------|----------|
-| `docs/ARCHITECTURE.md` | 1457 | 500 | Over hard cap — split to hub-and-spoke | Error |
-| `docs/ARCHITECTURE.md` | 546 | — | Duplicate `## Project Context` section | Error |
-| `docs/ARCHITECTURE.md` | 162-448 | — | Module deep-dive / altitude leak (function & field-level prose) | Warning |
-| `docs/ARCHITECTURE.md` | — | — | "Phase N" changelog narrative throughout | Warning |
-| root agent-instructions file | 240 | 100 | Over cap — duplicates core-doc content instead of linking | Error |
-
-### Cross-Reference Issues (Hub-and-Spoke)
-
-| Index File | Link | Issue |
-|-----------|------|-------|
-| `docs/ARCHITECTURE.md` | `BACKEND_ARCHITECTURE.md` | File not found |
+### Fixture Evidence
+| Fixture | Result | Evidence |
 
 ### Summary
-
-- **Structural issues:** <count>
-- **Content boundary violations:** <count>
-- **Size & altitude issues:** <count>
-- **Cross-reference issues:** <count>
+- Errors: <count>
+- Warnings: <count>
+- Incomplete checks: <count>
 
 ### Recommendations
-
-1. <Specific actionable recommendation>
-2. <Specific actionable recommendation>
-
-To fix isolated violations, dispatch the `doc_maintainer` agent:
-"Dispatch doc_maintainer to fix documentation violations found by doc_validate"
-
-When a doc is over its hard cap or has several altitude/duplication issues, a piecemeal fix won't help — run a full rebuild instead:
-"Load and run the docs-sync skill to reconstruct the docs compactly from the current codebase"
+1. <specific owner-aware action>
 ```
 
-## Severity Definitions
-
-| Severity | Meaning |
-|----------|---------|
-| **Error** | Clear content boundary violation — content is in the wrong document |
-| **Warning** | Borderline content — may be acceptable in context but worth reviewing |
-| **Info** | Structural suggestion — missing optional section or improvement opportunity |
+`PASS` requires all managed files, a valid root pair, no Errors, and no incomplete required check. Warnings may coexist with PASS only when the report clearly lists them. Recommend `docs-sync` when files are over hard caps or multiple altitude/duplication failures show systemic drift; recommend a bounded `doc_maintainer` update for isolated findings.
 
 ## Boundaries
 
-- **DO** read all managed documentation files thoroughly
-- **DO** check every content boundary rule from schemas.md
-- **DO** report specific line numbers for violations
-- **DO** provide actionable recommendations
-- **DO NOT** edit any files (read-only audit)
-- **DO NOT** validate unmanaged docs (TESTING, CONFIGURATION, etc.)
-- **DO NOT** validate source code files
+- Read every managed file completely and cite repository-relative paths and one-based lines.
+- Audit both root files separately and together.
+- Apply precedence, duplication, size, content-boundary, and link checks to the complete set.
+- Inventory but do not validate unmanaged docs.
+- Do not edit files, dispatch agents, choose a provider/model, or mutate repository state.
