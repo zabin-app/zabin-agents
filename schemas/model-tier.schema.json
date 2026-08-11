@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zabin.dev/schemas/model-tier.schema.json",
+  "title": "Provider-neutral model capability tiers",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "tiers"],
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/tier"}
+    }
+  },
+  "$defs": {
+    "tier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "capabilities",
+        "constraints",
+        "selection_criteria"
+      ],
+      "properties": {
+        "id": {"enum": ["fast", "balanced", "deep"]},
+        "description": {"type": "string", "minLength": 1},
+        "capabilities": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_task_complexity",
+            "context_budget",
+            "parallelism",
+            "mutation_support",
+            "requires_adversarial_verification"
+          ],
+          "properties": {
+            "max_task_complexity": {"enum": ["simple", "moderate", "complex"]},
+            "context_budget": {"enum": ["compact", "standard", "extended"]},
+            "parallelism": {"enum": ["high", "moderate", "low"]},
+            "mutation_support": {"enum": ["read_only", "task_scoped", "full_scope"]},
+            "requires_adversarial_verification": {"type": "boolean"}
+          }
+        },
+        "selection_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

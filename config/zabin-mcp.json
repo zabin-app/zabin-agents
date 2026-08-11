@@ -1,0 +1,158 @@
+{
+  "$schema": "../schemas/mcp-policy.schema.json",
+  "schema_version": "1.0.0",
+  "canonical_tool_names": {
+    "qualification_owner": "adapter",
+    "client_qualified_names_forbidden": true
+  },
+  "risk_classes": [
+    {"id": "read_only", "default_approval": "auto", "description": "Reads durable state without changing it."},
+    {"id": "task_scoped_write", "default_approval": "scope_granted", "description": "Mutates only the task, lease, attachment, or worktree held by the worker."},
+    {"id": "durable_write", "default_approval": "prompt", "description": "Changes durable project, plan, review, graph, or git-ledger state."},
+    {"id": "destructive", "default_approval": "human_gate", "description": "Deletes data or performs an irreversible lifecycle transition."},
+    {"id": "human_interaction", "default_approval": "human_gate", "description": "Creates an explicit human decision or approval boundary."}
+  ],
+  "servers": [
+    {
+      "id": "zabin-conductor",
+      "surface": "conductor",
+      "identity": {
+        "service_name": "zabin",
+        "surface_name": "conductor",
+        "client_server_key": "zabin",
+        "protocol_version": "2025-11-25",
+        "server_version": "0.1.0"
+      },
+      "transport": {
+        "type": "streamable_http",
+        "url": "http://127.0.0.1:50052/mcp"
+      },
+      "credential": {
+        "source": "environment",
+        "name": "ZABIN_MCP_TOKEN"
+      },
+      "approval_policy": {
+        "default": "prompt",
+        "risk_overrides": {
+          "read_only": "auto",
+          "task_scoped_write": "scope_granted",
+          "durable_write": "prompt",
+          "destructive": "human_gate",
+          "human_interaction": "human_gate"
+        },
+        "human_gates": ["register_project", "create_board", "delete_attachment"]
+      },
+      "tools": [
+        {"name": "add_action_item", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "add_phase", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "add_phase_tasks", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "ask_user_questions", "group": "human_in_loop", "risk_class": "human_interaction", "approval": "auto", "mutates_state": true},
+        {"name": "attach_file", "group": "attachment", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "claim_next_task", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "claim_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "complete_analysis_run", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "create_board", "group": "task_ledger", "risk_class": "human_interaction", "approval": "human_gate", "mutates_state": true},
+        {"name": "create_plan_draft", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "create_tasks", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "delete_attachment", "group": "attachment", "risk_class": "destructive", "approval": "human_gate", "mutates_state": true},
+        {"name": "finalize_plan", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_graph_summary", "group": "graph", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_overlap_report", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_pickup_context", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_pipeline_state", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_plan", "group": "plan", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_question_answers", "group": "human_in_loop", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_server_info", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_task", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "import_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "list_attachments", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_tasks", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_workspaces", "group": "git", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "post_progress_message", "group": "human_in_loop", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "query_graph", "group": "graph", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "record_commits", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "record_gate_result", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "record_research_artifact", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "record_review_round", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "record_task_summary", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "record_task_verdict", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "record_wave", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "register_project", "group": "project", "risk_class": "human_interaction", "approval": "human_gate", "mutates_state": true},
+        {"name": "register_worktree", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "release_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "renew_task_lease", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "resolve_project", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "search_context", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "set_layer_tour", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "set_plan_section", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "start_analysis_run", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "update_action_item", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "update_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "update_task_status", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "update_wave_status", "group": "task_ledger", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "update_worktree_status", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "upsert_graph_edges", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "upsert_graph_layer", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true},
+        {"name": "upsert_graph_nodes", "group": "graph", "risk_class": "durable_write", "approval": "prompt", "mutates_state": true}
+      ],
+      "adapter_requirements": [
+        {"client": "claude_code", "config_target": ".mcp.json", "server_key": "zabin", "credential_binding": "environment_interpolation", "tool_reference_mode": "client_qualified", "required_fields": ["type", "url", "headers.Authorization"]},
+        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]}
+      ]
+    },
+    {
+      "id": "zabin-worker",
+      "surface": "worker",
+      "identity": {
+        "service_name": "zabin",
+        "surface_name": "worker",
+        "client_server_key": "zabin-worker",
+        "protocol_version": "2025-11-25",
+        "server_version": "0.1.0"
+      },
+      "transport": {
+        "type": "streamable_http",
+        "url": "http://127.0.0.1:50053/mcp-worker"
+      },
+      "credential": {
+        "source": "environment",
+        "name": "ZABIN_MCP_WORKER_TOKEN"
+      },
+      "approval_policy": {
+        "default": "scope_granted",
+        "risk_overrides": {
+          "read_only": "auto",
+          "task_scoped_write": "scope_granted",
+          "durable_write": "deny",
+          "destructive": "deny",
+          "human_interaction": "deny"
+        },
+        "human_gates": []
+      },
+      "tools": [
+        {"name": "attach_file", "group": "attachment", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "claim_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_plan", "group": "plan", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_task", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_attachments", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_tasks", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_workspaces", "group": "git", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "post_progress_message", "group": "human_in_loop", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "record_commits", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "record_task_summary", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "register_worktree", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "release_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "renew_task_lease", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "search_context", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "update_task_status", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "update_worktree_status", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true}
+      ],
+      "adapter_requirements": [
+        {"client": "claude_code", "config_target": ".mcp.json", "server_key": "zabin-worker", "credential_binding": "environment_interpolation", "tool_reference_mode": "client_qualified", "required_fields": ["type", "url", "headers.Authorization"]},
+        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin-worker", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]}
+      ]
+    }
+  ]
+}

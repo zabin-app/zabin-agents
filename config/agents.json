@@ -1,0 +1,227 @@
+{
+  "$schema": "../schemas/agent-role.schema.json",
+  "schema_version": "1.0.0",
+  "roles": [
+    {
+      "id": "architecture_enforcer",
+      "title": "Architecture Enforcer",
+      "description": "Reviews changes for layer, pattern, and module-boundary compliance.",
+      "source": "agents/architecture_enforcer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "context": {"type": "object"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1800,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "bug_fix_reviewer",
+      "title": "Bug Fix Reviewer",
+      "description": "Verifies that a bug fix addresses its root cause without regressions.",
+      "source": "agents/bug_fix_reviewer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "reproduction": {"type": "object"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1800,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "code_quality_inspector",
+      "title": "Code Quality Inspector",
+      "description": "Reviews changes for maintainability, language idioms, and test quality.",
+      "source": "agents/code_quality_inspector.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "standards": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1800,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "codebase_researcher",
+      "title": "Codebase Researcher",
+      "description": "Traces code paths, symbols, and dependencies in the current repository.",
+      "source": "agents/codebase_researcher.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "scope"], "properties": {"objective": {"type": "string"}, "scope": {"type": "array"}, "context": {"type": "object"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["summary", "evidence"], "properties": {"summary": {"type": "string"}, "evidence": {"type": "array"}, "caveats": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1200,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "doc_maintainer",
+      "title": "Documentation Maintainer",
+      "description": "Maintains core project documentation within strict content boundaries.",
+      "source": "agents/doc_maintainer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "core_docs", "write_paths": ["docs/ARCHITECTURE.md", "docs/CODE_STANDARDS.md", "docs/DEVELOPMENT.md", "docs/REVIEW_FOCUS.md"], "deny_paths": ["src/**", "tests/**"], "requires_isolation": true},
+      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "shell.run"],
+      "input_schema": {"type": "object", "required": ["objective", "write_files"], "properties": {"objective": {"type": "string"}, "write_files": {"type": "array"}, "evidence": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 2400,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 1, "partial_result": "discard"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "external_researcher",
+      "title": "External Researcher",
+      "description": "Uses authoritative external sources to verify APIs and third-party behavior.",
+      "source": "agents/external_researcher.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["web.search", "web.fetch"],
+      "input_schema": {"type": "object", "required": ["objective", "source_policy"], "properties": {"objective": {"type": "string"}, "source_policy": {"type": "array"}, "context": {"type": "object"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["summary", "evidence"], "properties": {"summary": {"type": "string"}, "evidence": {"type": "array"}, "caveats": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1200,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 2, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "git_historian",
+      "title": "Git Historian",
+      "description": "Recovers design intent and change history from read-only Git evidence.",
+      "source": "agents/git_historian.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["git.inspect", "filesystem.read", "filesystem.search"],
+      "input_schema": {"type": "object", "required": ["objective", "scope"], "properties": {"objective": {"type": "string"}, "scope": {"type": "array"}, "revision_range": {"type": "string"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["summary", "evidence"], "properties": {"summary": {"type": "string"}, "evidence": {"type": "array"}, "caveats": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1200,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "implementor",
+      "title": "Implementor",
+      "description": "Implements one approved task inside its declared write scope and isolated worktree.",
+      "source": "agents/implementor.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "task_write_files", "write_paths": ["$task.write_files"], "deny_paths": ["workflow/plans/**"], "requires_isolation": true},
+      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "shell.run", "zabin.worker"],
+      "input_schema": {"type": "object", "required": ["project_id", "task_id", "worktree", "write_files"], "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}, "worktree": {"type": "string"}, "write_files": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed", "verification"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}, "verification": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 7200,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 3, "partial_result": "discard"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model", "isolation"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "integration_verifier",
+      "title": "Integration Verifier",
+      "description": "Runs post-merge build, test, and lint checks without modifying source.",
+      "source": "agents/integration_verifier.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "verification_only", "write_paths": [], "deny_paths": ["src/**", "tests/**", "config/**"], "requires_isolation": true},
+      "required_tools": ["filesystem.read", "git.inspect", "shell.run"],
+      "input_schema": {"type": "object", "required": ["diff_range", "commands"], "properties": {"diff_range": {"type": "string"}, "commands": {"type": "array"}, "context": {"type": "object"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "checks"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "checks": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 3600,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 1, "partial_result": "discard"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "logic_reasoning_checker",
+      "title": "Logic Reasoning Checker",
+      "description": "Performs deep consistency and side-effect analysis of implementation logic.",
+      "source": "agents/logic_reasoning_checker.md",
+      "model_tier": "deep",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "invariants": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 2400,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "risks_tradeoffs_analyzer",
+      "title": "Risks and Tradeoffs Analyzer",
+      "description": "Challenges implementation decisions and evaluates residual operational risk.",
+      "source": "agents/risks_tradeoffs_analyzer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "decisions": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1800,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "security_reviewer",
+      "title": "Security Reviewer",
+      "description": "Audits changes for credential, injection, authorization, and validation risks.",
+      "source": "agents/security_reviewer.md",
+      "model_tier": "deep",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "trust_boundaries": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "findings"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "findings": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 2400,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "task_validator",
+      "title": "Task Validator",
+      "description": "Checks one completed task against its acceptance criteria and write scope.",
+      "source": "agents/task_validator.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range", "acceptance_criteria"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "acceptance_criteria": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "criteria"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "criteria": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 900,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    }
+  ]
+}

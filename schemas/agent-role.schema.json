@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zabin.dev/schemas/agent-role.schema.json",
+  "title": "Portable agent role registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "roles"],
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/role"}
+    }
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "description",
+        "source",
+        "model_tier",
+        "mutation_scope",
+        "required_tools",
+        "input_schema",
+        "output_schema",
+        "timeout_seconds",
+        "failure_policy",
+        "adapter_requirements"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "source": {
+          "type": "string",
+          "pattern": "^agents/[a-z][a-z0-9_]*\\.md$"
+        },
+        "model_tier": {
+          "enum": ["fast", "balanced", "deep"]
+        },
+        "mutation_scope": {"$ref": "#/$defs/mutationScope"},
+        "required_tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/canonicalCapability"}
+        },
+        "input_schema": {"$ref": "#/$defs/ioSchema"},
+        "output_schema": {"$ref": "#/$defs/ioSchema"},
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 14400
+        },
+        "failure_policy": {"$ref": "#/$defs/failurePolicy"},
+        "adapter_requirements": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/adapterRequirement"}
+        }
+      }
+    },
+    "canonicalCapability": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!mcp__)[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "pathPattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "mutationScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "write_paths", "deny_paths", "requires_isolation"],
+      "properties": {
+        "mode": {
+          "enum": ["read_only", "task_write_files", "core_docs", "verification_only"]
+        },
+        "write_paths": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/pathPattern"}
+        },
+        "deny_paths": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/pathPattern"}
+        },
+        "requires_isolation": {"type": "boolean"}
+      }
+    },
+    "ioSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "required", "properties", "additionalProperties"],
+      "properties": {
+        "type": {"const": "object"},
+        "required": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "minProperties": 1
+          }
+        },
+        "additionalProperties": {"type": "boolean"}
+      }
+    },
+    "failurePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on_timeout", "on_tool_error", "max_retries", "partial_result"],
+      "properties": {
+        "on_timeout": {"enum": ["fail_closed", "return_partial"]},
+        "on_tool_error": {"enum": ["fail_closed", "retry", "return_partial"]},
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "partial_result": {"enum": ["discard", "return_with_warning"]}
+      }
+    },
+    "adapterRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client",
+        "artifact",
+        "required_fields",
+        "role_name_transform",
+        "tool_mapping"
+      ],
+      "properties": {
+        "client": {"enum": ["claude_code", "codex"]},
+        "artifact": {"enum": ["markdown_frontmatter", "toml"]},
+        "required_fields": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "role_name_transform": {"enum": ["snake_to_kebab", "identity"]},
+        "tool_mapping": {"enum": ["capability_to_native", "capability_to_allowlist"]}
+      }
+    }
+  }
+}

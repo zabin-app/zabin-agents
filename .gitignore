@@ -1,0 +1,21 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Temporary adapter outputs
+.tmp/adapters/
+build/adapters/
+
+# Editor and tool backups
+*.bak
+*.backup
+*~
+
+# Generated conformance reports
+conformance-results/
+
+# Local recovery checkpoints
+.runtime/

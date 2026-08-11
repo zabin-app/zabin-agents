@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zabin.dev/schemas/mcp-policy.schema.json",
+  "title": "Zabin MCP surface and approval policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "canonical_tool_names",
+    "risk_classes",
+    "servers"
+  ],
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$"
+    },
+    "canonical_tool_names": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["qualification_owner", "client_qualified_names_forbidden"],
+      "properties": {
+        "qualification_owner": {"const": "adapter"},
+        "client_qualified_names_forbidden": {"const": true}
+      }
+    },
+    "risk_classes": {
+      "type": "array",
+      "minItems": 4,
+      "items": {"$ref": "#/$defs/riskClass"}
+    },
+    "servers": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/server"}
+    }
+  },
+  "$defs": {
+    "canonicalToolName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!mcp__)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "riskId": {
+      "enum": ["read_only", "task_scoped_write", "durable_write", "destructive", "human_interaction"]
+    },
+    "approval": {
+      "enum": ["auto", "scope_granted", "prompt", "human_gate", "deny"]
+    },
+    "riskClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "default_approval", "description"],
+      "properties": {
+        "id": {"$ref": "#/$defs/riskId"},
+        "default_approval": {"$ref": "#/$defs/approval"},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "surface",
+        "identity",
+        "transport",
+        "credential",
+        "approval_policy",
+        "tools",
+        "adapter_requirements"
+      ],
+      "properties": {
+        "id": {"enum": ["zabin-conductor", "zabin-worker"]},
+        "surface": {"enum": ["conductor", "worker"]},
+        "identity": {"$ref": "#/$defs/identity"},
+        "transport": {"$ref": "#/$defs/transport"},
+        "credential": {"$ref": "#/$defs/credential"},
+        "approval_policy": {"$ref": "#/$defs/approvalPolicy"},
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/tool"}
+        },
+        "adapter_requirements": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/adapter"}
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service_name",
+        "surface_name",
+        "client_server_key",
+        "protocol_version",
+        "server_version"
+      ],
+      "properties": {
+        "service_name": {"const": "zabin"},
+        "surface_name": {"enum": ["conductor", "worker"]},
+        "client_server_key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "protocol_version": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "server_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": {"const": "streamable_http"},
+        "url": {
+          "type": "string",
+          "pattern": "^http://127\\.0\\.0\\.1:[0-9]+/mcp(?:-worker)?$"
+        }
+      }
+    },
+    "credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name"],
+      "properties": {
+        "source": {"const": "environment"},
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        }
+      }
+    },
+    "approvalPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "risk_overrides", "human_gates"],
+      "properties": {
+        "default": {"$ref": "#/$defs/approval"},
+        "risk_overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read_only", "task_scoped_write", "durable_write", "destructive", "human_interaction"],
+          "properties": {
+            "read_only": {"$ref": "#/$defs/approval"},
+            "task_scoped_write": {"$ref": "#/$defs/approval"},
+            "durable_write": {"$ref": "#/$defs/approval"},
+            "destructive": {"$ref": "#/$defs/approval"},
+            "human_interaction": {"$ref": "#/$defs/approval"}
+          }
+        },
+        "human_gates": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/canonicalToolName"}
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "group", "risk_class", "approval", "mutates_state"],
+      "properties": {
+        "name": {"$ref": "#/$defs/canonicalToolName"},
+        "group": {
+          "enum": ["project", "plan", "task_ledger", "git", "human_in_loop", "attachment", "graph"]
+        },
+        "risk_class": {"$ref": "#/$defs/riskId"},
+        "approval": {"$ref": "#/$defs/approval"},
+        "mutates_state": {"type": "boolean"}
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client",
+        "config_target",
+        "server_key",
+        "credential_binding",
+        "tool_reference_mode",
+        "required_fields"
+      ],
+      "properties": {
+        "client": {"enum": ["claude_code", "codex"]},
+        "config_target": {"enum": [".mcp.json", ".codex/config.toml"]},
+        "server_key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "credential_binding": {"enum": ["environment_interpolation", "bearer_token_env_var"]},
+        "tool_reference_mode": {"enum": ["client_qualified", "client_native"]},
+        "required_fields": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
