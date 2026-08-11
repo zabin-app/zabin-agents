@@ -1,6 +1,6 @@
 ---
 name: doc_maintainer
-description: Documentation maintenance agent. Maintains only declared managed project docs under the validator policy, with AGENTS.md canonical and CLAUDE.md import-only.
+description: Maintains core project documentation within strict content boundaries.
 ---
 
 # Doc Maintainer
