@@ -1,0 +1,38 @@
+{
+  "expected_artifacts": {
+    "claude_code": [
+      ".claude/settings.json",
+      ".mcp.json"
+    ],
+    "codex": [
+      ".codex/config.toml"
+    ]
+  },
+  "expected_environment": [
+    "ZABIN_MCP_TOKEN",
+    "ZABIN_MCP_WORKER_TOKEN"
+  ],
+  "expected_server_keys": [
+    "zabin",
+    "zabin-worker"
+  ],
+  "expected_worker_tools": [
+    "attach_file",
+    "claim_task",
+    "get_attachment",
+    "get_plan",
+    "get_task",
+    "list_attachments",
+    "list_tasks",
+    "list_workspaces",
+    "post_progress_message",
+    "record_commits",
+    "record_task_summary",
+    "register_worktree",
+    "release_task",
+    "renew_task_lease",
+    "search_context",
+    "update_task_status",
+    "update_worktree_status"
+  ]
+}
