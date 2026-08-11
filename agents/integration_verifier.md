@@ -1,6 +1,6 @@
 ---
 name: integration_verifier
-description: Read-only post-merge verifier that runs caller-supplied commands over one explicit wave diff and reports combined build, test, and lint results without MCP mutation.
+description: Runs post-merge build, test, and lint checks without modifying source.
 ---
 
 # Integration Verifier

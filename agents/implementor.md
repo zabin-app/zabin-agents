@@ -1,6 +1,6 @@
 ---
 name: implementor
-description: Implements one approved task inside its declared write scope and isolated worktree, using the Zabin worker surface when a Zabin task identity is supplied.
+description: Implements one approved task inside its declared write scope and isolated worktree.
 ---
 
 # Implementor

@@ -1,6 +1,6 @@
 ---
 name: task_validator
-description: Read-only validator for one committed task diff, its explicit acceptance criteria, and declared write scope. Returns PASS, CONCERN, or FAIL without mutating Zabin or Git.
+description: Checks one completed task against its acceptance criteria and write scope.
 ---
 
 # Task Validator
