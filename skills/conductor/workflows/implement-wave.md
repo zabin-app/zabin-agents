@@ -39,7 +39,37 @@ The registered inputs illustrated below are exact and closed.
 }
 ```
 
-The implementor envelope carries exact `agent_name`, branch, base branch/SHA, worktree id, complexity/tier, TTL, verification context, and dispatch correlation. The validator envelope carries branch/worktree identity, tier, and correlation. None of that metadata is injected into either `role_input`.
+The implementor envelope carries exact `agent_name`, branch, base branch/SHA, worktree id, complexity/tier, TTL, verification context, and dispatch correlation. The validator envelope carries branch/worktree identity, tier, correlation, and a separate `context` object containing task id/title, authoritative `write_files`, worker summary, lease-holder name, source commits, and expected branch. None of that metadata or context is injected into either closed `role_input`.
+
+## Cross-document contract audit fixture
+
+This fixture is checked against `config/agents.json`, `agents/implementor.md`, and `agents/task_validator.md`. It demonstrates that validator containment data stays outside the closed role input while remaining available to the validator:
+
+```json
+{
+  "implementor_statuses": ["done", "blocked", "failed"],
+  "validator_dispatch": {
+    "role_input": {
+      "objective": "Validate task tsk_example",
+      "diff_range": "base..source",
+      "acceptance_criteria": ["all declared behavior is present"]
+    },
+    "context": {
+      "task_id": "tsk_example",
+      "task_title": "Example task",
+      "write_files": ["src/file"],
+      "worker_summary": "Implemented the declared file",
+      "lease_holder_name": "implementor@example/task",
+      "source_commits": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "expected_branch": "work/task"
+    }
+  },
+  "containment": {
+    "rule": "every committed path must be a member of write_files",
+    "undeclared_path_result": "fail"
+  }
+}
+```
 
 ## Input schema
 
@@ -99,7 +129,7 @@ Each child must satisfy the registered `implementor.output_schema` exactly:
 }
 ```
 
-The conductor reconciles branch, commit, lease, task, and worktree facts from git and Zabin; it never trusts invented child fields for those facts.
+After registered-schema validation, accept only the lowercase contract values `done`, `blocked`, or `failed` in `status`; reject rather than case-fold any other value. The conductor reconciles branch, commit, lease, task, and worktree facts from git and Zabin; it never trusts invented child fields for those facts.
 
 ## Worker lifecycle stub
 
@@ -111,13 +141,13 @@ For each task, build the exact four-field `implementor` role input above, valida
 4. Write task status `queued`, then `executing`, under the same `agent_name`.
 5. Post bounded progress messages and implement only the authoritative scope. The worker must not create, switch, merge, rebase, remove, or clean worktrees, and must not spawn agents.
 6. Renew the explicit TTL immediately before long verification. Run the repository-grounded verification commands in the assigned worktree.
-7. Commit the scoped implementation in that worktree using `git.commit`. Do not edit or append a local task ledger: Zabin is the task record. Do not require an extra task-file commit. Record only actual scoped source/documentation changes plus explicitly permitted trivial collateral.
+7. Before committing, require every changed path to be present in the authoritative `write_files` set. Any undeclared lockfile, generated file, task ledger, re-export, import, or other path is a containment failure: preserve the evidence and stop rather than staging or committing it. Commit only declared paths using `git.commit`. Do not edit or append a local task ledger unless it is itself declared; Zabin is the task record.
 8. Call `record_commits` with the source commit SHA and registered `worktree_id`.
 9. Call `update_worktree_status(..., status: "idle")`; the commit ledger carries the current SHA unless the discovered schema has a dedicated field.
 10. Write task status `in_review`, then call `record_task_summary` with files, verification, commit, scope containment, and documentation-routing needs.
 11. Return a schema-valid implementor result while retaining the lease. Never write `validated` or `completed`, and never call `release_task`.
 
-If implementation or verification fails, the worker still preserves and commits useful scoped work when required by the implementor contract, reports `status: "Failed"`, marks the worktree idle if safe, writes `in_review` only when a reviewable commit and summary exist, and retains the lease for conductor recovery. It does not invent a lifecycle transition to escape failure.
+If implementation or verification fails, the worker still preserves and commits useful scoped work when required by the implementor contract, reports `status: "failed"`, marks the worktree idle if safe, writes `in_review` only when a reviewable commit and summary exist, and retains the lease for conductor recovery. It does not invent a lifecycle transition to escape failure.
 
 ## Main-loop procedure
 
@@ -125,7 +155,7 @@ If implementation or verification fails, the worker still preserves and commits 
 2. Spawn every implementor envelope before awaiting any result. Record dispatch ids by task id in conductor state.
 3. Await all implementors. After timeout, request `cancel`, preserve the lease/worktree/branch, and mark the aggregate task result failed. Cancellation does not authorize release or cleanup.
 4. Validate every untouched child result only against `implementor.output_schema`. The conductor alone transforms the registered result plus git/MCP/envelope facts into the per-task aggregate object; it validates that distinct object against the output schema. Reconcile with `get_task`, `list_workspaces`, recorded commits, git head, and task summary. Any missing or contradictory evidence is a containment failure.
-5. For each reviewable `in_review` task, build exactly `objective`, `diff_range`, and `acceptance_criteria`, validate against `task_validator.input_schema`, and call `spawn-role(envelope)`. Its host envelope binds the worktree and `fast` tier. The validator is read-only, runs no orchestration, and returns only its registered output.
+5. For each reviewable `in_review` task, build exactly `objective`, `diff_range`, and `acceptance_criteria`, then validate that closed object against `task_validator.input_schema`. In the sibling host envelope `context`, supply at least authoritative `write_files` and, when available, task id/title, worker summary, lease-holder name, source commits, and expected branch. The envelope also binds the worktree and `fast` tier. Missing `context.write_files` is a fail-closed dispatch error because containment would be unverifiable. The validator is read-only, runs no orchestration, and returns only its registered output.
 6. Await and validate validators. A missing, failed, timed-out, cancelled, or invalid validator result is `fail`; no branch with `concern` or `fail` may merge.
 7. Return the aggregate to the conductor. The conductor persists task gates and verdicts, writes `validated` only for pass under the worker's exact agent name, and performs merge/integration/complete/release later under the conductor-owned lifecycle.
 
@@ -149,7 +179,7 @@ If implementation or verification fails, the worker still preserves and commits 
           "branch": {"type": "string"},
           "worktree_id": {"type": "string"},
           "source_sha": {"type": ["string", "null"]},
-          "worker_status": {"enum": ["Done", "Blocked", "Failed"]},
+          "worker_status": {"enum": ["done", "blocked", "failed"]},
           "validator_verdict": {"enum": ["pass", "concern", "fail"]},
           "files_changed": {"type": "array", "items": {"type": "string"}},
           "verification": {"type": "array"},
@@ -172,7 +202,7 @@ Invalid input returns `invalid_input`, the supplied wave id when valid or an emp
 [
   {"status":"ready_for_verdicts","wave_id":"wav_1","tasks":[],"warnings":[]},
   {"status":"blocked","wave_id":"wav_1","tasks":[],"warnings":["overlap precondition failed"]},
-  {"status":"partial","wave_id":"wav_1","tasks":[{"task_id":"tsk_1","agent_name":"worker-1","branch":"work/1","worktree_id":"wkt_1","source_sha":null,"worker_status":"Failed","validator_verdict":"fail","files_changed":[],"verification":[],"summary":"worker timeout"}],"warnings":["worker timeout"]},
+  {"status":"partial","wave_id":"wav_1","tasks":[{"task_id":"tsk_1","agent_name":"worker-1","branch":"work/1","worktree_id":"wkt_1","source_sha":null,"worker_status":"failed","validator_verdict":"fail","files_changed":[],"verification":[],"summary":"worker timeout"}],"warnings":["worker timeout"]},
   {"status":"invalid_input","wave_id":"","tasks":[],"warnings":["tasks is invalid"]}
 ]
 ```
