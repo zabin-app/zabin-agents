@@ -102,6 +102,22 @@
       "config_source": "project .codex/config.toml",
       "interactive_trust_automatable": false
     },
+    "goose": {
+      "supported": false,
+      "required": true,
+      "reason": "Goose 1.45.0 remains fail-closed because the pinned compatibility audit has unresolved credential, identity, approval, trust, sandbox, artifact, and cleanup gates.",
+      "executable": "goose",
+      "binary_environment": "GOOSE_NATIVE_BINARY",
+      "version_arguments": ["--version"],
+      "expected_output": "1.45.0",
+      "compatibility_lock": "adapters/goose/client-lock.json",
+      "compatibility_lock_sha256": "sha256:748eac1ac94347bf6d77df41371e0e9538b897d1dc721e08b945513ae3646e7f",
+      "observed_binary_sha256": "sha256:9ef3ae45d819e41d1b7bcb1533033765d1e1876aba4a35ff0f6e722337512b3b",
+      "official_artifact_verified": false,
+      "official_artifact_sha256": null,
+      "path_root_environment": "GOOSE_PATH_ROOT",
+      "config_source": "explicit recipe plus isolated GOOSE_PATH_ROOT"
+    },
     "pi": {
       "supported": false,
       "reason": "The audited PI 0.84.1 and pi-mcp-adapter 2.22.0 pair fails the repository policy audit.",

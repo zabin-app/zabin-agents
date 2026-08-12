@@ -39,6 +39,10 @@ class PolicyParityTests(unittest.TestCase):
         self.assertIn("--expected-failures", official["forbidden_arguments"])
         self.assertEqual("2.1.220 (Claude Code)", self.lock["clients"]["claude_code"]["expected_output"])
         self.assertEqual("codex-cli 0.147.0", self.lock["clients"]["codex"]["expected_output"])
+        self.assertFalse(self.lock["clients"]["goose"]["supported"])
+        self.assertTrue(self.lock["clients"]["goose"]["required"])
+        self.assertEqual("1.45.0", self.lock["clients"]["goose"]["expected_output"])
+        self.assertFalse(self.lock["clients"]["goose"]["official_artifact_verified"])
         self.assertFalse(self.lock["clients"]["pi"]["supported"])
 
     def test_lock_rejects_argument_drift_and_unpinned_integrity(self) -> None:
@@ -67,6 +71,10 @@ class PolicyParityTests(unittest.TestCase):
             ("Node path", ("runtimes", "node", "expected_path"), "/opt/node/bin/node"),
             ("Claude command", ("clients", "claude_code", "noninteractive_command", 1), "--version"),
             ("Codex version", ("clients", "codex", "expected_output"), "codex-cli 0.148.0"),
+            ("Goose compatibility", ("clients", "goose", "compatibility_lock_sha256"), "3" * 64),
+            ("Goose binary", ("clients", "goose", "observed_binary_sha256"), "4" * 64),
+            ("Goose version", ("clients", "goose", "expected_output"), "1.45.1"),
+            ("Goose binary environment", ("clients", "goose", "binary_environment"), "OTHER_BINARY"),
             ("lifecycle lease", ("lifecycle", "minimum_worker_lease_seconds"), 1801),
         )
         for label, path, replacement in mutations:
@@ -474,6 +482,33 @@ class PolicyParityTests(unittest.TestCase):
             return_value={"stdout": "example 1.2.4\n", "stderr": "", "returncode": 0},
         ):
             self.assertEqual("fail", run_conformance.verify_version("example", spec, 1).status)
+
+    def test_goose_probe_requires_explicit_binary_and_isolated_path_root(self) -> None:
+        spec = self.lock["clients"]["goose"]
+        missing = run_conformance.verify_goose_client(spec, 1, environment={})
+        self.assertFalse(run_conformance.passed(missing))
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "goose"
+            binary.write_text("#!/bin/sh\nprintf '1.45.0\\n'\n", encoding="utf-8")
+            binary.chmod(0o700)
+            changed = dict(spec)
+            changed["observed_binary_sha256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
+            seen: dict[str, str] = {}
+
+            def launch(argv, **kwargs):
+                del argv
+                seen.update(kwargs["environment"])
+                return {"stdout": "1.45.0\n", "stderr": "", "returncode": 0}
+
+            with mock.patch("scripts.run_conformance.run_redacted", side_effect=launch):
+                checks = run_conformance.verify_goose_client(
+                    changed,
+                    1,
+                    environment={"GOOSE_NATIVE_BINARY": os.fspath(binary)},
+                )
+            self.assertTrue(run_conformance.passed(checks), checks)
+            self.assertTrue(seen["GOOSE_PATH_ROOT"].startswith("/tmp/"))
+            self.assertEqual("approve", seen["GOOSE_MODE"])
 
 
 if __name__ == "__main__":

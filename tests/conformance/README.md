@@ -17,6 +17,8 @@ any security pin. The lock records:
   immutable Git commit digest;
 - the exact Python and Node runtime probes;
 - installed Claude Code and Codex versions and exact noninteractive argv;
+- the exact Goose 1.45.0 compatibility-lock and observed-binary digests, its
+  explicit binary-path input, and disposable `GOOSE_PATH_ROOT` boundary;
 - PI as unsupported, linked to the audited extension lock;
 - exact canonical endpoints, build/protocol identity, inventory counts, and
   SHA-256 inventory fingerprints;
@@ -46,9 +48,13 @@ dependency must resolve through `https://registry.npmjs.org/` and carry an exact
 version and SHA-512 integrity; unresolved, local, Git, or integrity-free entries
 fail rather than disappearing from the verification set.
 
-Startup compares every pinned version, digest, command, argument, PI extension
-lock, server identity, and policy fingerprint. An unverified artifact is a
-failure, not a skipped prerequisite. The current repository host has Claude
+Startup compares every pinned version, digest, command, argument, Goose/PI
+compatibility lock, server identity, and policy fingerprint. Goose is required:
+`GOOSE_NATIVE_BINARY` must name the exact absolute, non-symlink executable in
+the lock, and its version probe runs with an isolated temporary
+`GOOSE_PATH_ROOT`. Its missing official release-artifact proof is a required
+failure, so local version and binary observations cannot create support. An
+unverified artifact is a failure, not a skipped prerequisite. The current repository host has Claude
 Code 2.1.220 and Codex CLI 0.147.0, but no `node`, `npm`, or `pi`; therefore it
 cannot honestly produce a full native/live conformance pass until the exact
 pinned Node runtime and verified official artifact are provisioned.
@@ -67,12 +73,18 @@ unrelated variables are never inherited.
 python -m unittest discover -s tests/conformance -p 'test_*.py'
 ```
 
-The tests use only fixtures and mocks. They cover strict startup and policy
-parity; exact host commands and configuration source; separate trust, approval,
+The default tests use standard-library fixtures and mocks. They cover strict
+startup and policy parity; exact host commands and configuration source;
+separate trust, approval,
 activation, and connectivity states; raw/qualified tool names; allowed and
 forbidden receipts; pre-launch missing-secret failure; redaction canaries;
 restricted artifacts; lifecycle ordering and allowlisting; checkpoint
 reconciliation; stale baselines; cleanup; and required pass/fail/skip behavior.
+Goose cases additionally close both qualified inventories, hidden/direct
+forbidden calls with zero server receipts, missing and swapped credentials,
+pre-credential identity/inventory/redirect drift, approve mode, mutually
+exclusive permissions, empty default extensions, `AGENTS.md` and Agent Skills
+discovery markers, bounded timeout/cancellation, redaction, and cleanup.
 
 ## Static runner
 
@@ -89,13 +101,14 @@ conformance environment.
 
 ## Native-host observer reports
 
-Claude Code and Codex must be tested separately by a deterministic observer,
+Claude Code, Codex, and Goose must be tested separately by a deterministic observer,
 not by asking a model whether setup worked. Pass each redacted report explicitly:
 
 ```sh
 python scripts/run_conformance.py \
   --host-report claude_code=/restricted/claude-report.json \
-  --host-report codex=/restricted/codex-report.json
+  --host-report codex=/restricted/codex-report.json \
+  --host-report goose=/restricted/goose-report.json
 ```
 
 The exact JSON shape is exercised by `test_native_hosts.py`. It must prove the
@@ -104,6 +117,16 @@ activation, connected build identity, exact enumerated names, one receipt for a
 direct allowed call, zero receipts for a forbidden call, and zero enumeration or
 invocation when the secret is absent. It must also report complete cleanup and
 that no raw streams were persisted.
+
+The Goose observer must run the pinned native executable only with an explicit
+disposable `GOOSE_PATH_ROOT` and instrumented loopback conductor/worker
+fixtures. Its report has a separate closed surface record for every identity,
+qualified inventory, allowed/forbidden receipt, auth-denial, and drift case.
+Both shared-context discovery markers, permission/no-default state,
+timeout/cancellation, cleanup, and redaction are independently scored. Even a
+complete observer report cannot pass while the compatibility lock remains
+`unsupported`; skipped observation, a missing binary or artifact, or partial
+evidence is also a required failure.
 
 Claude's interactive workspace-trust prompt is a separate check. Claude Code
 documents that `--print` skips that dialog, so headless activation is never used
@@ -157,6 +180,7 @@ runner:
 python scripts/run_conformance.py --live \
   --host-report claude_code=/restricted/claude-report.json \
   --host-report codex=/restricted/codex-report.json \
+  --host-report goose=/restricted/goose-report.json \
   --lifecycle-evidence /restricted/disposable-lifecycle.json
 ```
 

@@ -122,6 +122,25 @@ class LifecycleEvidenceTests(unittest.TestCase):
             run_conformance.passed([run_conformance.Check("optional", "skip", "unsupported", required=False)])
         )
 
+    def test_missing_or_unsupported_goose_evidence_prevents_overall_pass(self) -> None:
+        goose = self.lock["clients"]["goose"]
+        self.assertTrue(goose["required"])
+        self.assertFalse(goose["supported"])
+        self.assertFalse(
+            run_conformance.passed(
+                [run_conformance.Check("host_goose", "skip", "observer missing")]
+            )
+        )
+        self.assertFalse(
+            run_conformance.passed(
+                [
+                    run_conformance.Check(
+                        "host_goose_support_gate", "fail", goose["reason"]
+                    )
+                ]
+            )
+        )
+
     def test_missing_startup_inputs_prevent_live_client_launch(self) -> None:
         with mock.patch("scripts.run_conformance.verify_startup", return_value=[run_conformance.Check("artifact", "fail", "missing")]), mock.patch(
             "scripts.run_conformance.zabin_doctor.probe_live"

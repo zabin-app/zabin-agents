@@ -53,6 +53,172 @@ class NativeHostTests(unittest.TestCase):
             "cleanup": "complete",
         }
 
+    def goose_report(self) -> dict:
+        goose = self.lock["clients"]["goose"]
+        return {
+            "schema_version": "1.0.0",
+            "host": "goose",
+            "version": goose["expected_output"],
+            "binary_sha256": goose["observed_binary_sha256"],
+            "compatibility_lock_sha256": goose["compatibility_lock_sha256"],
+            "support_status": "unsupported",
+            "path_root": {
+                "environment": "GOOSE_PATH_ROOT",
+                "value": "/tmp/goose-conformance-observer/root",
+                "isolated": True,
+                "disposable": True,
+                "production_unchanged": True,
+            },
+            "surfaces": {
+                surface: {
+                    "extension_name": f"zabin-{surface}",
+                    "server_identity": {
+                        "service_name": server["service_name"],
+                        "server_info_name": server["server_info_name"],
+                        "surface": surface,
+                        "version": server["version"],
+                        "protocol_version": server["protocol_version"],
+                        "inventory_sha256": server["inventory_sha256"],
+                    },
+                    "enumerated_tools": sorted(
+                        run_conformance._expected_host_tools(self.policy, "goose")[surface]
+                    ),
+                    "hidden_tool": f"zabin-{surface}__conformance_forbidden",
+                    "allowed_call": {
+                        "tool": f"zabin-{surface}__get_task",
+                        "success": True,
+                        "receipt_count": 1,
+                    },
+                    "forbidden_call": {
+                        "tool": f"zabin-{surface}__conformance_forbidden",
+                        "rejected_before_transport": True,
+                        "receipt_count": 0,
+                    },
+                    "auth": {
+                        "credential_environment": server["credential_environment"],
+                        "missing": {"rejected": True, "receipt_count": 0},
+                        "swapped": {"rejected": True, "receipt_count": 0},
+                    },
+                    "drift": {
+                        kind: {
+                            "rejected_before_credential": True,
+                            "credential_receipt_count": 0,
+                            "request_receipt_count": 0,
+                        }
+                        for kind in ("server_info", "inventory", "redirect")
+                    },
+                }
+                for surface, server in self.lock["servers"].items()
+            },
+            "runtime_policy": {
+                "mode": "approve",
+                "permissions_mutually_exclusive": True,
+                "default_extensions": [],
+            },
+            "context_discovery": {
+                "agents_md": {"observed": True, "marker": "agents-marker"},
+                "skills": {"observed": True, "marker": "skill-marker"},
+            },
+            "timeout_cancellation": {
+                "timeout_seconds": 2,
+                "timed_out": True,
+                "cancel_requested": True,
+                "child_terminated": True,
+            },
+            "logs": "observer: redacted and clean",
+            "raw_streams_persisted": False,
+            "cleanup": {
+                "status": "complete",
+                "path_root_removed": True,
+                "fixtures_stopped": True,
+            },
+        }
+
+    def test_goose_evidence_is_scored_but_unsupported_lock_prevents_pass(self) -> None:
+        checks = run_conformance.assess_goose_native_report(
+            self.goose_report(), self.lock, self.policy, canaries=["synthetic-canary"]
+        )
+        by_name = {check.name: check for check in checks}
+        self.assertEqual("fail", by_name["host_goose_support_gate"].status)
+        self.assertTrue(all(
+            check.status == "pass"
+            for check in checks
+            if check.name != "host_goose_support_gate"
+        ), checks)
+        self.assertFalse(run_conformance.passed(checks))
+
+    def test_goose_requires_exact_qualified_inventory_and_hidden_tool_absence(self) -> None:
+        report = self.goose_report()
+        report["surfaces"]["worker"]["enumerated_tools"].append(
+            "zabin-worker__conformance_forbidden"
+        )
+        checks = run_conformance.assess_goose_native_report(report, self.lock, self.policy)
+        self.assertEqual(
+            "fail", {check.name: check for check in checks}["host_goose_worker_inventory"].status
+        )
+
+    def test_goose_forbidden_and_auth_receipts_must_stay_zero(self) -> None:
+        mutations = (
+            ("conductor", "forbidden_call", "receipt_count"),
+            ("worker", "auth", "missing", "receipt_count"),
+            ("worker", "auth", "swapped", "receipt_count"),
+        )
+        for path in mutations:
+            with self.subTest(path=path):
+                report = self.goose_report()
+                target = report["surfaces"]
+                for component in path[:-1]:
+                    target = target[component]
+                target[path[-1]] = 1
+                checks = run_conformance.assess_goose_native_report(
+                    report, self.lock, self.policy
+                )
+                self.assertFalse(run_conformance.passed(checks))
+
+    def test_goose_drift_must_be_rejected_before_credential_and_request(self) -> None:
+        for kind in ("server_info", "inventory", "redirect"):
+            with self.subTest(kind=kind):
+                report = self.goose_report()
+                report["surfaces"]["conductor"]["drift"][kind][
+                    "credential_receipt_count"
+                ] = 1
+                checks = run_conformance.assess_goose_native_report(
+                    report, self.lock, self.policy
+                )
+                self.assertEqual(
+                    "fail",
+                    {check.name: check for check in checks}[
+                        "host_goose_conductor_drift"
+                    ].status,
+                )
+
+    def test_goose_runtime_context_timeout_cleanup_and_redaction_fail_closed(self) -> None:
+        mutations = []
+        mode = self.goose_report()
+        mode["runtime_policy"]["mode"] = "auto"
+        mutations.append(mode)
+        defaults = self.goose_report()
+        defaults["runtime_policy"]["default_extensions"] = ["developer"]
+        mutations.append(defaults)
+        context = self.goose_report()
+        context["context_discovery"]["skills"]["observed"] = False
+        mutations.append(context)
+        timeout = self.goose_report()
+        timeout["timeout_cancellation"]["child_terminated"] = False
+        mutations.append(timeout)
+        cleanup = self.goose_report()
+        cleanup["cleanup"]["path_root_removed"] = False
+        mutations.append(cleanup)
+        leaked = self.goose_report()
+        leaked["logs"] = "Authorization: Bearer synthetic-canary"
+        mutations.append(leaked)
+        for report in mutations:
+            with self.subTest(report=report):
+                checks = run_conformance.assess_goose_native_report(
+                    report, self.lock, self.policy, canaries=["synthetic-canary"]
+                )
+                self.assertTrue(any(check.status == "fail" for check in checks[1:]))
+
     def test_codex_report_proves_separate_install_trust_activation_and_dispatch_states(self) -> None:
         checks = run_conformance.assess_native_host_report(
             "codex", self.report("codex"), self.lock, self.policy, canaries=["canary"]

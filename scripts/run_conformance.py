@@ -35,7 +35,7 @@ from scripts import recovery_checkpoint, zabin_doctor
 DEFAULT_LOCK = ROOT / "tests" / "conformance" / "runner-lock.json"
 DEFAULT_POLICY = ROOT / "config" / "zabin-mcp.json"
 RESULT_SCHEMA = "1.0.0"
-EXPECTED_CANONICAL_LOCK_SHA256 = "0609ec7df27f48b66446fa530d399a731aba1f189dbafda55999fa80ef547c83"
+EXPECTED_CANONICAL_LOCK_SHA256 = "3ab8039900b027608feebf0b42e2cdd201ca1580b749aa148e64391a848bc434"
 EXPECTED_OFFICIAL_PINS = {
     "repository": "https://github.com/modelcontextprotocol/conformance",
     "action_version": "v0.1.11",
@@ -75,6 +75,19 @@ EXPECTED_CLIENT_PINS = {
         ),
     ),
 }
+EXPECTED_GOOSE_PIN = (
+    "goose",
+    "GOOSE_NATIVE_BINARY",
+    ("--version",),
+    "1.45.0",
+    "adapters/goose/client-lock.json",
+    "sha256:748eac1ac94347bf6d77df41371e0e9538b897d1dc721e08b945513ae3646e7f",
+    "sha256:9ef3ae45d819e41d1b7bcb1533033765d1e1876aba4a35ff0f6e722337512b3b",
+    False,
+    None,
+    "GOOSE_PATH_ROOT",
+    "explicit recipe plus isolated GOOSE_PATH_ROOT",
+)
 EXPECTED_LIFECYCLE_PINS = (
     (
         "project_scope", "incremental_plan", "approval_observed", "overlap_report",
@@ -231,9 +244,24 @@ def validate_lock(lock: Mapping[str, Any]) -> None:
             expected_fields.add("expected_path")
         if not isinstance(runtime, Mapping) or set(runtime) != expected_fields:
             raise ConformanceError(f"runtime lock is incomplete: {runtime_name}")
-    for client_name in ("claude_code", "codex", "pi"):
+    for client_name in ("claude_code", "codex", "goose", "pi"):
         if client_name not in lock["clients"]:
             raise ConformanceError(f"client lock is missing: {client_name}")
+    goose = lock["clients"]["goose"]
+    if not isinstance(goose, Mapping) or set(goose) != {
+        "supported", "required", "reason", "executable", "binary_environment", "version_arguments",
+        "expected_output", "compatibility_lock", "compatibility_lock_sha256",
+        "observed_binary_sha256", "official_artifact_verified",
+        "official_artifact_sha256", "path_root_environment", "config_source",
+    }:
+        raise ConformanceError("Goose client lock is incomplete")
+    if goose["supported"] is not False or goose["required"] is not True:
+        raise ConformanceError("Goose must remain a required fail-closed conformance target")
+    for field in ("compatibility_lock_sha256", "observed_binary_sha256"):
+        if not SHA256.fullmatch(str(goose.get(field, ""))):
+            raise ConformanceError(f"Goose {field} is not pinned")
+    if goose["official_artifact_verified"] is not False or goose["official_artifact_sha256"] is not None:
+        raise ConformanceError("Goose official artifact state differs from its compatibility audit")
     if lock["clients"]["pi"].get("supported") is not False:
         raise ConformanceError("PI must remain unsupported until its policy audit passes")
 
@@ -283,6 +311,19 @@ def validate_lock(lock: Mapping[str, Any]) -> None:
         )
         for name in ("claude_code", "codex")
     }
+    actual_goose_pin = (
+        goose["executable"],
+        goose["binary_environment"],
+        tuple(goose["version_arguments"]),
+        goose["expected_output"],
+        goose["compatibility_lock"],
+        goose["compatibility_lock_sha256"],
+        goose["observed_binary_sha256"],
+        goose["official_artifact_verified"],
+        goose["official_artifact_sha256"],
+        goose["path_root_environment"],
+        goose["config_source"],
+    )
     lifecycle = lock["lifecycle"]
     actual_lifecycle_pins = (
         tuple(lifecycle["required_stages"]),
@@ -293,6 +334,7 @@ def validate_lock(lock: Mapping[str, Any]) -> None:
         actual_official_pins != EXPECTED_OFFICIAL_PINS
         or actual_runtime_pins != EXPECTED_RUNTIME_PINS
         or actual_client_pins != EXPECTED_CLIENT_PINS
+        or actual_goose_pin != EXPECTED_GOOSE_PIN
         or actual_lifecycle_pins != EXPECTED_LIFECYCLE_PINS
     ):
         raise ConformanceError("runner lock security pins differ from code-owned constants")
@@ -420,6 +462,84 @@ def verify_version(name: str, spec: Mapping[str, Any], timeout: float) -> Check:
             },
         )
     return Check(name, "pass", "installed version exactly matches the lock", required, {"version": observed})
+
+
+def verify_goose_client(
+    spec: Mapping[str, Any],
+    timeout: float,
+    *,
+    environment: Mapping[str, str],
+) -> list[Check]:
+    """Verify an explicit Goose binary inside a disposable path root."""
+
+    raw_path = environment.get(str(spec["binary_environment"]), "")
+    if not raw_path:
+        return [
+            Check("client_goose", "fail", "explicit Goose binary path is required"),
+            Check("client_goose_binary", "fail", "Goose binary integrity is unavailable"),
+            Check("client_goose_isolation", "fail", "native Goose was not launched"),
+        ]
+    binary = Path(raw_path)
+    try:
+        metadata = binary.lstat()
+    except OSError:
+        return [
+            Check("client_goose", "fail", "Goose binary cannot be inspected"),
+            Check("client_goose_binary", "fail", "Goose binary integrity is unavailable"),
+            Check("client_goose_isolation", "fail", "native Goose was not launched"),
+        ]
+    safe_binary = (
+        binary.is_absolute()
+        and stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and os.access(binary, os.X_OK)
+    )
+    if not safe_binary:
+        return [
+            Check("client_goose", "fail", "Goose binary is not an absolute non-symlink executable"),
+            Check("client_goose_binary", "fail", "Goose binary integrity is unavailable"),
+            Check("client_goose_isolation", "fail", "native Goose was not launched"),
+        ]
+    binary_check = verify_digest(
+        binary, str(spec["observed_binary_sha256"]), "client_goose_binary"
+    )
+    if binary_check.status != "pass":
+        return [
+            Check("client_goose", "fail", "Goose binary differs from the observed lock"),
+            binary_check,
+            Check("client_goose_isolation", "fail", "unverified native Goose was not launched"),
+        ]
+    with tempfile.TemporaryDirectory(prefix="zabin-goose-conformance-") as temporary:
+        path_root = Path(temporary)
+        child = official_child_environment(environment, isolated_home=path_root)
+        child.update(
+            {
+                str(spec["path_root_environment"]): os.fspath(path_root),
+                "GOOSE_MODE": "approve",
+            }
+        )
+        result = run_redacted(
+            [os.fspath(binary), *map(str, spec["version_arguments"])],
+            timeout=timeout,
+            environment=child,
+        )
+        observed = result["stdout"].strip() or result["stderr"].strip()
+        version_ok = result["returncode"] == 0 and observed == spec["expected_output"]
+        isolation_ok = child[str(spec["path_root_environment"])] == os.fspath(path_root)
+    return [
+        Check(
+            "client_goose",
+            "pass" if version_ok else "fail",
+            "Goose version exactly matches the lock" if version_ok else "Goose version differs from the lock",
+            evidence={"version": observed},
+        ),
+        binary_check,
+        Check(
+            "client_goose_isolation",
+            "pass" if isolation_ok else "fail",
+            "native probe used a disposable GOOSE_PATH_ROOT" if isolation_ok else "native probe was not isolated",
+        ),
+    ]
 
 
 def verify_node_runtime(
@@ -602,6 +722,23 @@ def verify_startup(
         verified_executables["node"] = node_path
     for name in ("claude_code", "codex"):
         checks.append(verify_version(f"client_{name}", lock["clients"][name], timeout))
+
+    goose = lock["clients"]["goose"]
+    checks.extend(verify_goose_client(goose, timeout, environment=environ))
+    checks.append(
+        verify_digest(
+            ROOT / goose["compatibility_lock"],
+            goose["compatibility_lock_sha256"],
+            "goose_compatibility_lock",
+        )
+    )
+    checks.append(
+        Check(
+            "goose_official_artifact",
+            "pass" if goose["official_artifact_verified"] is True else "fail",
+            "official Goose artifact is verified" if goose["official_artifact_verified"] is True else "official Goose artifact integrity is unresolved",
+        )
+    )
 
     pi = lock["clients"]["pi"]
     checks.append(Check("client_pi", "skip", str(pi["reason"]), required=False))
@@ -842,9 +979,144 @@ def _expected_host_tools(policy: Mapping[str, Any], host: str) -> dict[str, set[
         raw = {tool["name"] for tool in server["tools"] if tool["approval"] != "deny"}
         if host == "claude_code":
             tools[server["surface"]] = {f"mcp__{key}__{name}" for name in raw}
+        elif host == "goose":
+            tools[server["surface"]] = {f"{key}__{name}" for name in raw}
         else:
             tools[server["surface"]] = raw
     return tools
+
+
+def assess_goose_native_report(
+    report: Mapping[str, Any],
+    lock: Mapping[str, Any],
+    policy: Mapping[str, Any],
+    *,
+    canaries: Sequence[str] = (),
+) -> list[Check]:
+    """Score external Goose observations without weakening its support gate."""
+
+    required_fields = {
+        "schema_version", "host", "version", "binary_sha256",
+        "compatibility_lock_sha256", "support_status", "path_root", "surfaces",
+        "runtime_policy", "context_discovery", "timeout_cancellation", "logs",
+        "raw_streams_persisted", "cleanup",
+    }
+    if set(report) != required_fields:
+        return [Check("host_goose_shape", "fail", "Goose observer report shape is not exact")]
+    goose = lock["clients"]["goose"]
+    checks = [
+        Check(
+            "host_goose_support_gate",
+            "pass" if goose["supported"] is True and report["support_status"] == "supported" else "fail",
+            "Goose is supported by every pinned gate" if goose["supported"] is True else str(goose["reason"]),
+        )
+    ]
+    identity_pass = (
+        report["schema_version"] == "1.0.0"
+        and report["host"] == "goose"
+        and report["version"] == goose["expected_output"]
+        and report["binary_sha256"] == goose["observed_binary_sha256"]
+        and report["compatibility_lock_sha256"] == goose["compatibility_lock_sha256"]
+        and report["support_status"] == "unsupported"
+    )
+    checks.append(Check("host_goose_pin", "pass" if identity_pass else "fail", "observer pins match the audited Goose client" if identity_pass else "observer pins differ from the Goose lock"))
+
+    path_root = report["path_root"]
+    path_value = Path(str(path_root.get("value", ""))) if isinstance(path_root, Mapping) else Path()
+    path_pass = (
+        isinstance(path_root, Mapping)
+        and set(path_root) == {"environment", "value", "isolated", "disposable", "production_unchanged"}
+        and path_root["environment"] == goose["path_root_environment"]
+        and path_value.is_absolute()
+        and os.fspath(path_value).startswith("/tmp/")
+        and path_root["isolated"] is True
+        and path_root["disposable"] is True
+        and path_root["production_unchanged"] is True
+    )
+    checks.append(Check("host_goose_path_root", "pass" if path_pass else "fail", "GOOSE_PATH_ROOT is disposable and production state was not touched" if path_pass else "isolated disposable GOOSE_PATH_ROOT was not proven"))
+
+    expected_tools = _expected_host_tools(policy, "goose")
+    observed_surfaces = report["surfaces"]
+    for surface in ("conductor", "worker"):
+        name = f"host_goose_{surface}"
+        observation = observed_surfaces.get(surface) if isinstance(observed_surfaces, Mapping) else None
+        expected_server = lock["servers"][surface]
+        expected_extension = f"zabin-{surface}"
+        expected_identity = {
+            "service_name": expected_server["service_name"],
+            "server_info_name": expected_server["server_info_name"],
+            "surface": surface,
+            "version": expected_server["version"],
+            "protocol_version": expected_server["protocol_version"],
+            "inventory_sha256": expected_server["inventory_sha256"],
+        }
+        if not isinstance(observation, Mapping) or set(observation) != {
+            "extension_name", "server_identity", "enumerated_tools", "hidden_tool",
+            "allowed_call", "forbidden_call", "auth", "drift",
+        }:
+            checks.append(Check(f"{name}_shape", "fail", "surface observation shape is not exact"))
+            continue
+        identity_ok = observation["extension_name"] == expected_extension and observation["server_identity"] == expected_identity
+        checks.append(Check(f"{name}_identity", "pass" if identity_ok else "fail", "surface identity matches every lock pin" if identity_ok else "surface identity differs from the lock"))
+        actual_tools = observation["enumerated_tools"]
+        hidden_tool = f"{expected_extension}__conformance_forbidden"
+        inventory_ok = (
+            isinstance(actual_tools, list)
+            and actual_tools == sorted(expected_tools[surface])
+            and observation["hidden_tool"] == hidden_tool
+            and hidden_tool not in actual_tools
+        )
+        checks.append(Check(f"{name}_inventory", "pass" if inventory_ok else "fail", "exact qualified inventory is visible and hidden tool is absent" if inventory_ok else "qualified inventory or hidden-tool evidence differs"))
+        allowed = observation["allowed_call"]
+        allowed_ok = isinstance(allowed, Mapping) and set(allowed) == {"tool", "success", "receipt_count"} and allowed.get("tool") == f"{expected_extension}__get_task" and allowed.get("success") is True and allowed.get("receipt_count") == 1
+        checks.append(Check(f"{name}_allowed_call", "pass" if allowed_ok else "fail", "direct allowed call produced exactly one receipt" if allowed_ok else "allowed dispatch receipt is not exact"))
+        forbidden = observation["forbidden_call"]
+        forbidden_ok = isinstance(forbidden, Mapping) and set(forbidden) == {"tool", "rejected_before_transport", "receipt_count"} and forbidden.get("tool") == hidden_tool and forbidden.get("rejected_before_transport") is True and forbidden.get("receipt_count") == 0
+        checks.append(Check(f"{name}_forbidden_call", "pass" if forbidden_ok else "fail", "direct forbidden dispatch was rejected with zero receipts" if forbidden_ok else "forbidden dispatch containment was not proven"))
+        auth = observation["auth"]
+        auth_ok = (
+            isinstance(auth, Mapping)
+            and set(auth) == {"credential_environment", "missing", "swapped"}
+            and auth.get("credential_environment") == expected_server["credential_environment"]
+            and all(
+                isinstance(auth.get(case), Mapping)
+                and set(auth[case]) == {"rejected", "receipt_count"}
+                and auth[case]["rejected"] is True
+                and auth[case]["receipt_count"] == 0
+                for case in ("missing", "swapped")
+            )
+        )
+        checks.append(Check(f"{name}_auth", "pass" if auth_ok else "fail", "missing and swapped credentials were rejected with zero receipts" if auth_ok else "credential-separation evidence is incomplete"))
+        drift = observation["drift"]
+        drift_ok = (
+            isinstance(drift, Mapping)
+            and set(drift) == {"server_info", "inventory", "redirect"}
+            and all(
+                isinstance(drift.get(case), Mapping)
+                and set(drift[case]) == {"rejected_before_credential", "credential_receipt_count", "request_receipt_count"}
+                and drift[case]["rejected_before_credential"] is True
+                and drift[case]["credential_receipt_count"] == 0
+                and drift[case]["request_receipt_count"] == 0
+                for case in ("server_info", "inventory", "redirect")
+            )
+        )
+        checks.append(Check(f"{name}_drift", "pass" if drift_ok else "fail", "identity, inventory, and redirect drift were rejected before any credential or request receipt" if drift_ok else "pre-credential drift rejection was not proven"))
+
+    runtime = report["runtime_policy"]
+    runtime_ok = isinstance(runtime, Mapping) and set(runtime) == {"mode", "permissions_mutually_exclusive", "default_extensions"} and runtime["mode"] == "approve" and runtime["permissions_mutually_exclusive"] is True and runtime["default_extensions"] == []
+    checks.append(Check("host_goose_runtime_policy", "pass" if runtime_ok else "fail", "approve mode, exclusive permissions, and no defaults were observed" if runtime_ok else "runtime permission or default-extension policy differs"))
+    context = report["context_discovery"]
+    context_ok = isinstance(context, Mapping) and set(context) == {"agents_md", "skills"} and all(isinstance(context.get(kind), Mapping) and set(context[kind]) == {"observed", "marker"} and context[kind]["observed"] is True and isinstance(context[kind]["marker"], str) and bool(context[kind]["marker"]) for kind in ("agents_md", "skills"))
+    checks.append(Check("host_goose_context", "pass" if context_ok else "fail", "AGENTS.md and Agent Skills discovery markers were observed" if context_ok else "shared context discovery evidence is incomplete"))
+    bounded = report["timeout_cancellation"]
+    bounded_ok = isinstance(bounded, Mapping) and set(bounded) == {"timeout_seconds", "timed_out", "cancel_requested", "child_terminated"} and isinstance(bounded["timeout_seconds"], (int, float)) and not isinstance(bounded["timeout_seconds"], bool) and 0 < bounded["timeout_seconds"] <= float(lock["timeouts_seconds"]["host"]) and bounded["timed_out"] is True and bounded["cancel_requested"] is True and bounded["child_terminated"] is True
+    checks.append(Check("host_goose_timeout_cancellation", "pass" if bounded_ok else "fail", "timeout was bounded and cancellation terminated the child" if bounded_ok else "bounded timeout and cancellation were not proven"))
+    logs = str(report["logs"])
+    leaked = any(canary and canary in logs for canary in canaries) or bool(SECRET_PATTERN.search(logs))
+    checks.append(Check("host_goose_redaction", "fail" if leaked else "pass", "credential-like material appears in observer logs" if leaked else "observer logs contain no canary or credential-bearing header"))
+    cleanup_ok = report["raw_streams_persisted"] is False and report["cleanup"] == {"status": "complete", "path_root_removed": True, "fixtures_stopped": True}
+    checks.append(Check("host_goose_cleanup", "pass" if cleanup_ok else "fail", "temporary root and loopback fixtures were completely removed" if cleanup_ok else "Goose cleanup evidence is incomplete"))
+    return checks
 
 
 def assess_native_host_report(
@@ -1005,8 +1277,10 @@ def write_report(path: Path, report: Mapping[str, Any], secrets: Sequence[str]) 
 
 def _parse_host_report(value: str) -> tuple[str, Path]:
     host, separator, path = value.partition("=")
-    if separator != "=" or host not in {"claude_code", "codex"} or not path:
-        raise argparse.ArgumentTypeError("host report must be claude_code=PATH or codex=PATH")
+    if separator != "=" or host not in {"claude_code", "codex", "goose"} or not path:
+        raise argparse.ArgumentTypeError(
+            "host report must be claude_code=PATH, codex=PATH, or goose=PATH"
+        )
     return host, Path(path)
 
 
@@ -1035,17 +1309,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for host, path in args.host_report:
         report = _load_json(path, f"{host} native-host report")
-        checks.extend(
-            assess_native_host_report(
-                host,
-                report,
-                lock,
-                policy,
-                canaries=[value for value in secrets if value],
+        if host == "goose":
+            checks.extend(
+                assess_goose_native_report(
+                    report,
+                    lock,
+                    policy,
+                    canaries=[value for value in secrets if value],
+                )
             )
-        )
+        else:
+            checks.extend(
+                assess_native_host_report(
+                    host,
+                    report,
+                    lock,
+                    policy,
+                    canaries=[value for value in secrets if value],
+                )
+            )
     supplied_hosts = {host for host, _ in args.host_report}
-    for host in ({"claude_code", "codex"} - supplied_hosts):
+    for host in ({"claude_code", "codex", "goose"} - supplied_hosts):
         checks.append(Check(f"host_{host}", "skip", "native-host observer report was not supplied"))
 
     if args.lifecycle_evidence:
