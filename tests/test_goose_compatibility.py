@@ -48,6 +48,18 @@ REQUIRED_GATE_IDS = {
     "sandbox_containment",
     "cleanup_and_drift",
 }
+APPROVED_INERT_TEMPLATE_NAMES = {
+    "recipe.json.template",
+    "settings.json.template",
+}
+FORBIDDEN_INERT_TEMPLATE_KEYS = {
+    "authorization",
+    "envkeys",
+    "envs",
+    "extensions",
+    "headers",
+    "uri",
+}
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -88,6 +100,39 @@ def dispatch(extension_name: str, tool_name: str, available: list[str], receipts
 
 def contains_secret_literal(text: str) -> bool:
     return any(pattern.search(text) is not None for pattern in SECRET_PATTERNS)
+
+
+def validate_inert_template(text: str) -> dict[str, Any]:
+    """Accept only explicit unsupported metadata, never usable Goose config."""
+    value = json.loads(text)
+    if not isinstance(value, dict):
+        raise AssertionError("inert Goose template must contain a JSON object")
+    if value.get("support_status") != "unsupported":
+        raise AssertionError("inert Goose template must remain explicitly unsupported")
+    if value.get("active") is not False:
+        raise AssertionError("inert Goose template must remain inactive")
+    if value.get("artifacts") != []:
+        raise AssertionError("inert Goose template must not declare active artifacts")
+    if contains_secret_literal(text):
+        raise AssertionError("inert Goose template must not persist a credential literal")
+
+    pending: list[Any] = [value]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, dict):
+            for key, nested in current.items():
+                normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+                if (
+                    normalized in FORBIDDEN_INERT_TEMPLATE_KEYS
+                    or "token" in normalized
+                    or "secret" in normalized
+                    or "apikey" in normalized
+                ):
+                    raise AssertionError(f"inert Goose template contains forbidden key: {key}")
+                pending.append(nested)
+        elif isinstance(current, list):
+            pending.extend(current)
+    return value
 
 
 def resolve_permission_source_parity(
@@ -383,17 +428,48 @@ class GooseCompatibilityTests(unittest.TestCase):
         self.assertEqual(expected, {item["path"]: item["sha256"] for item in evidence})
         self.assertTrue(all(item["commit"] == self.lock["client"]["release_commit"] for item in evidence))
 
-    def test_unsupported_gate_forbids_every_active_artifact(self) -> None:
+    def test_unsupported_gate_permits_only_approved_inert_templates(self) -> None:
         self.assertEqual("unsupported", self.lock["support_status"])
         self.assertFalse(self.lock["decision"]["active_credential_artifacts_allowed"])
         self.assertEqual([], self.lock["decision"]["active_artifacts"])
-        self.assertEqual(
-            {"COMPATIBILITY.md", "client-lock.json"},
-            {path.name for path in ADAPTER_DIR.iterdir()},
-        )
-        self.assertFalse((ADAPTER_DIR / "settings.json.template").exists())
-        self.assertFalse((ADAPTER_DIR / "recipe.json.template").exists())
+        allowed_names = {
+            "COMPATIBILITY.md",
+            "client-lock.json",
+            *APPROVED_INERT_TEMPLATE_NAMES,
+        }
+        observed_names = {path.name for path in ADAPTER_DIR.iterdir()}
+        self.assertLessEqual(observed_names, allowed_names)
+        self.assertTrue({"COMPATIBILITY.md", "client-lock.json"} <= observed_names)
+        for name in APPROVED_INERT_TEMPLATE_NAMES:
+            path = ADAPTER_DIR / name
+            if path.exists():
+                self.assertTrue(path.is_file())
+                validate_inert_template(path.read_text(encoding="utf-8"))
         self.assertNotRegex(self.compatibility, r"\*\*Status:\s*supported\b")
+
+    def test_inert_template_contract_rejects_activation_and_native_config(self) -> None:
+        accepted = {
+            "support_status": "unsupported",
+            "active": False,
+            "artifacts": [],
+            "reason": "Native Goose activation remains fail closed.",
+            "metadata": {"format": "placeholder"},
+        }
+        self.assertEqual(accepted, validate_inert_template(json.dumps(accepted)))
+
+        rejected = (
+            {**accepted, "support_status": "supported"},
+            {**accepted, "active": True},
+            {**accepted, "artifacts": ["settings.json"]},
+            {**accepted, "metadata": {"extensions": []}},
+            {**accepted, "metadata": {"Authorization": "environment"}},
+            {**accepted, "metadata": {"api-key-name": "EXAMPLE"}},
+            {**accepted, "metadata": [{"access_token": "EXAMPLE"}]},
+            {**accepted, "metadata": {"headers": {"X-Mode": "disabled"}}},
+        )
+        for payload in rejected:
+            with self.subTest(payload=payload), self.assertRaises(AssertionError):
+                validate_inert_template(json.dumps(payload))
 
     def test_canonical_inventory_counts_and_fingerprints_are_pinned(self) -> None:
         policy_servers = {server["surface"]: server for server in self.policy["servers"]}
