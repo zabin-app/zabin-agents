@@ -98,9 +98,17 @@ Names in portable prompts describe intent. Client qualification, executable name
 - Preserve unmanaged native configuration. Track only installer-owned components in the sidecar manifest and reject modified or missing owned components rather than guessing ownership.
 - A dry run and a check must be side-effect free. Check mode reports drift; it never repairs it.
 
+## Conditional Client Adapters
+
+- Treat the canonical policy and the client's compatibility lock as one support decision. Missing, inconsistent, unknown, or failed required gates disable active output and installation.
+- An unsupported target may emit only deterministic inert status artifacts. It must not emit loadable native configuration, acquire active installer ownership, or read credential values.
+- Derive per-surface tool lists from canonical policy and require exact, non-empty allowlists. Never rely on an empty native allowlist: clients that interpret it as allow-all must remain disabled.
+- Require separate qualified conductor and worker identities without collisions, credential-before-identity exposure, or permission precedence that weakens the canonical approval boundary.
+- Test both unsupported and synthetic-supported paths. Unsupported tests prove inert output and absence of bearer material; supported-path tests prove exact allowlists, transactional ownership, drift refusal, and cleanup without changing the committed support decision.
+
 ## Secret Handling
 
-- Store credential names and bindings in policy; obtain values only at the runtime boundary that explicitly requires them. Never render literal bearer values into adapters, checkpoints, manifests, reports, argv, or persisted raw streams.
+- Store credential names and bindings in policy; obtain values only at the runtime boundary that explicitly requires them. Never render literal bearer values into adapters, recipes, settings, checkpoints, manifests, reports, argv, or persisted raw streams.
 - Conductor and worker credentials are distinct. Test missing, empty, placeholder, swapped, and wrong-surface values as denial cases.
 - Redact recursively by sensitive key and credential-bearing text, headers, URLs, and query parameters. Apply known-value replacement before pattern redaction and verify the serialized result contains no canary.
 - Diagnostic output may report a credential's name, source, and availability. It must not print the value, a digest of the value, or exception text that may contain it.

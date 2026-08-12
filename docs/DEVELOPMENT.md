@@ -5,7 +5,7 @@
 - A local clone of this repository.
 - Python 3.11 or newer for rendering, installation, diagnostics, recovery support, and the dependency-free unit suite.
 - No Python package installation is required for ordinary development.
-- Supported native clients are needed only to install and observe their adapters.
+- Native clients are needed only to install or observe their adapters. Goose 1.45.0 is an optional pinned observation target and remains unsupported.
 - Full locked conformance additionally requires the exact Python, Node, client, official runner, transitive lock, and artifact versions recorded in `tests/conformance/runner-lock.json`. The runner downloads nothing.
 
 Run commands from the repository root. Use a disposable directory for examples and replace every `/absolute/...` placeholder with an explicit path you control.
@@ -21,7 +21,7 @@ read -rsp 'Worker token: ' ZABIN_MCP_WORKER_TOKEN
 export ZABIN_MCP_WORKER_TOKEN
 ```
 
-Do not place literal values in repository files or generated adapters. Claude configuration interpolates the environment variables; Codex configuration stores their names for runtime lookup. Live diagnostics may instead read explicit token files:
+Do not place literal values in repository files or generated adapters. Claude configuration interpolates the environment variables; Codex configuration stores their names for runtime lookup. The unsupported Goose target must not consume or persist either value. Live diagnostics may instead read explicit token files:
 
 ```bash
 python scripts/zabin_doctor.py --live \
@@ -51,6 +51,7 @@ Run focused contract and subsystem suites:
 python -m unittest tests.test_contract_schemas
 python -m unittest tests.test_render_adapters
 python -m unittest tests.test_install_adapters
+python -m unittest tests.test_goose_compatibility
 python -m unittest tests.test_recovery_checkpoint
 python -m unittest tests.test_zabin_doctor
 python -m unittest discover -s tests/conformance -p 'test_*.py'
@@ -107,6 +108,18 @@ python scripts/render_adapters.py \
 
 An administrator must deploy that staged file through the supported system policy workflow and verify the effective client policy.
 
+### Audit the inert Goose target
+
+Goose 1.45.0 is lock-gated and unsupported. These commands require no credential values and render or compare only inert status artifacts:
+
+```bash
+python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose --dry-run
+python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose
+python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose --check
+```
+
+Do not convert the output into an active recipe or settings file. The audited gates and re-evaluation boundary live in [`adapters/goose/COMPATIBILITY.md`](../adapters/goose/COMPATIBILITY.md).
+
 ## Install and Check Portable Assets
 
 The installer has no implicit home-directory destination. Always provide the project, skills, and role-instruction destinations. Begin with a dry run:
@@ -153,9 +166,20 @@ python scripts/install_adapters.py \
 
 Check mode exits `1` for drift and `2` for an unsafe or invalid installation. Symlink mode is available for locally trusted development destinations; copy mode is the safer default for independent installations.
 
+The unsupported Goose installer target can be audited without creating active Goose configuration. It still plans the shared portable roles, skills, and ownership manifest:
+
+```bash
+python scripts/install_adapters.py --mode dry-run --project-destination /absolute/project \
+  --skills-destination /absolute/client/skills --instructions-destination /absolute/client/agents --target goose
+python scripts/install_adapters.py --mode check --project-destination /absolute/project \
+  --skills-destination /absolute/client/skills --instructions-destination /absolute/client/agents --target goose
+```
+
+An unsupported Goose target must report inactive and must not own `goose/recipe.json` or `goose/settings.json`.
+
 ## Static Diagnostics
 
-Static doctor validates schemas, role and tier contracts, policy, templates, rendered adapter semantics, PI support state, and recovery contracts without network access or credential reads:
+Static doctor validates schemas, role and tier contracts, policy, templates, rendered adapter semantics, conditional client support states, and recovery contracts without network access or credential reads:
 
 ```bash
 python scripts/zabin_doctor.py
@@ -163,6 +187,14 @@ python scripts/zabin_doctor.py --json
 ```
 
 A failing check exits nonzero. A degraded live result remains distinguishable from a full failure.
+
+Static doctor reports Goose's unsupported status and blocking gate identifiers as a passing diagnosis, not as client support. To compare an explicitly selected executable with the pinned local observation, use an absolute non-symlink path:
+
+```bash
+python scripts/zabin_doctor.py --live --goose-binary /absolute/path/to/goose --json
+```
+
+The probe runs the executable with an isolated temporary `GOOSE_PATH_ROOT`; it does not activate the adapter or upgrade the support decision. Because `--live` also enables the read-only surface probes described below, both endpoints and credentials must be available.
 
 ## Opt-in Live Diagnostics
 
@@ -213,8 +245,11 @@ export ZABIN_CONFORMANCE_TRANSITIVE_ARTIFACT_MANIFEST=/absolute/verified/artifac
 python scripts/run_conformance.py --live \
   --host-report claude_code=/absolute/restricted/claude-report.json \
   --host-report codex=/absolute/restricted/codex-report.json \
+  --host-report goose=/absolute/restricted/goose-report.json \
   --lifecycle-evidence /absolute/restricted/disposable-lifecycle.json
 ```
+
+The Goose report must describe an explicit pinned binary, an isolated disposable `GOOSE_PATH_ROOT`, loopback observations, redacted in-memory streams, and complete fixture cleanup. With the committed Goose 1.45.0 lock, its required support gate fails even when all observational fields are valid, so the aggregate conformance result is intentionally non-pass. Report shape and fixture requirements live in [`tests/conformance/README.md`](../tests/conformance/README.md).
 
 Lifecycle evidence must describe a disposable project. Observing a reviewed non-disposable project requires both deliberate evidence and an exact allowlist:
 
@@ -237,6 +272,8 @@ python scripts/render_adapters.py --target claude_code --output-dir /absolute/re
 python scripts/render_adapters.py --target claude_code --output-dir /absolute/release/claude --check
 python scripts/render_adapters.py --target codex --output-dir /absolute/release/codex
 python scripts/render_adapters.py --target codex --output-dir /absolute/release/codex --check
+python scripts/render_adapters.py --target goose --output-dir /absolute/release/goose
+python scripts/render_adapters.py --target goose --output-dir /absolute/release/goose --check
 python scripts/run_conformance.py \
   --host-report claude_code=/absolute/restricted/claude-report.json \
   --host-report codex=/absolute/restricted/codex-report.json \
@@ -268,6 +305,6 @@ Confirm that the two Streamable HTTP gateways—not the gRPC listener—are runn
 
 Compare the installed runtimes and clients with `tests/conformance/runner-lock.json`. Supply the exact regular official artifact, transitive lock, and complete tarball manifest; the runner rejects symlinks, alternate locks, missing digests, unpinned dependencies, version drift, and incomplete observer or lifecycle evidence before starting live clients.
 
-PI has no installation command. Its current support boundary and evidence are documented in [ARCHITECTURE.md](ARCHITECTURE.md#mcp-surfaces-and-authority) and `adapters/pi/COMPATIBILITY.md`.
+Goose and PI have no active installation command. Their current support boundaries are summarized in [ARCHITECTURE.md](ARCHITECTURE.md) and detailed in `adapters/goose/COMPATIBILITY.md` and `adapters/pi/COMPATIBILITY.md`.
 
 System design lives in [ARCHITECTURE.md](ARCHITECTURE.md); coding and testing conventions live in [CODE_STANDARDS.md](CODE_STANDARDS.md).

@@ -15,11 +15,11 @@ Zabin owns durable workflow state. Filesystem checkpoints retain only the recove
 | Capability policy (`config/model-tiers.json`) | Selects provider-neutral `fast`, `balanced`, and `deep` capability classes; the host resolves each class to a runtime model. |
 | MCP policy (`config/zabin-mcp.json`) | Defines the two Zabin surfaces, canonical tool inventory, identities, transport, credentials, risk classes, and approval requirements. |
 | Contract schemas (`schemas/`) | Close and version the role registry, capability tiers, MCP policy, and recovery checkpoint formats. |
-| Client adapters (`adapters/`, rendering and installation scripts) | Translate canonical policy into supported native configuration and synchronize prompts and skills without weakening allowlists or approval semantics. |
+| Client adapters (`adapters/`, rendering and installation scripts) | Translate canonical policy into native configuration, conditionally gate client support through compatibility locks, and synchronize prompts and skills without weakening allowlists or approval semantics. |
 | Diagnostics and conformance (`scripts/zabin_doctor.py`, `scripts/run_conformance.py`, `tests/conformance/`) | Check static contract coherence and, when explicitly enabled, verify live identity, authorization boundaries, native-host behavior, lifecycle evidence, and pinned protocol conformance. |
 | Recovery checkpoints (`scripts/recovery_checkpoint.py`) | Store redacted, closed-schema recovery snapshots atomically and compare them with Zabin state. |
 
-Claude Code and Codex are supported adapter targets. PI remains unsupported and fails closed: its empty settings template, audited dependency lock, compatibility analysis, and conformance lock record why it cannot satisfy the full identity, dispatch, approval, integrity, and sandbox contract.
+Claude Code and Codex are supported adapter targets. Goose 1.45.0 and PI remain unsupported and fail closed. Their compatibility locks and conformance evidence preserve the audited boundary, while rendering and installation keep active native configuration disabled. See the [Goose compatibility decision](../adapters/goose/COMPATIBILITY.md) and [conformance contract](../tests/conformance/README.md).
 
 ## Layer Dependencies
 
@@ -44,7 +44,7 @@ supported host -> rendered adapter -> Zabin MCP surfaces
 ```
 
 - Prompts name registered semantic capabilities and role contracts, not host-specific dispatch APIs.
-- Adapter rendering depends on canonical policy and schemas. Policy never depends on rendered client files.
+- Adapter rendering depends on canonical policy, schemas, and any conditional client compatibility lock. Policy never depends on rendered client files, and a failed support gate can produce only inert output.
 - Installation consumes rendered configuration and portable assets. It does not redefine role, MCP, or approval policy.
 - Diagnostics and conformance observe the same canonical contracts; they do not create a competing runtime policy.
 - Recovery code may read authoritative Zabin state and local checkpoints, but it never promotes a checkpoint over Zabin or mutates authoritative state during reconciliation.
@@ -65,12 +65,12 @@ Zabin records the authoritative project, plan, phase, wave, task, gate, verdict,
 | Boundary | Architectural rule |
 | --- | --- |
 | Canonical checkout | Versioned prompts, schemas, policy, templates, and locks are the generation inputs. Rendering and installation reject malformed, incomplete, substituted, or drifting inputs. |
-| Adapter installation | Destinations and the canonical checkout must be locally trusted during synchronization. The installer records ownership and separate workspace-trust, server-approval, and activation states; file presence is not proof of any of them. |
+| Adapter installation | Destinations and the canonical checkout must be locally trusted during synchronization. The installer records ownership and separate workspace-trust, server-approval, and activation states; file presence is not proof of any of them. Conditional targets cannot acquire active ownership while their support lock fails. |
 | Credentials | Configuration binds credential names or runtime interpolation, never bearer values. Conductor and worker credentials are independent and must not be accepted across surfaces. |
 | MCP transport | Clients authenticate before use; diagnostics compare the live surface and inventory with canonical policy. Authentication, identity, filtering, and approval all have to hold. |
-| Native clients | Supported clients must prove configuration source, trust/approval, activation, exact enumeration, allowed dispatch, forbidden non-receipt, missing-secret containment, and cleanup through external observation. |
+| Native clients | Supported clients must prove configuration source, trust/approval, activation, exact enumeration, allowed dispatch, forbidden non-receipt, missing-secret containment, and cleanup through external observation. Goose observations additionally run under an explicit disposable `GOOSE_PATH_ROOT`; that state isolation is neither workspace/recipe trust nor a process sandbox. |
 | Recovery storage | Checkpoints contain redacted evidence, use restrictive permissions and atomic replacement, and remain non-authoritative. |
-| Third-party adapters | Unsupported clients are not enabled on partial evidence. PI remains outside the supported boundary. |
+| Third-party adapters | Unsupported clients are not enabled on partial evidence. Goose and PI remain outside the supported boundary. |
 
 ## Data Flow
 
