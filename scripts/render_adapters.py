@@ -36,6 +36,28 @@ CODEX_APPROVAL_MODES = {
     "prompt": "prompt",
     "human_gate": "prompt",
 }
+GOOSE_REQUIRED_GATE_IDS = frozenset(
+    {
+        "official_artifact_integrity",
+        "dual_surface_qualification",
+        "nonempty_tool_allowlists",
+        "credential_indirection_and_redaction",
+        "identity_before_credential",
+        "permission_exclusivity",
+        "headless_approval_boundary",
+        "hook_fail_closed_enforcement",
+        "recipe_and_workspace_trust",
+        "sandbox_containment",
+        "cleanup_and_drift",
+    }
+)
+GOOSE_GATE_STATUSES = frozenset({"pass", "fail"})
+# This digest makes the audited client identity, exact release-source blobs,
+# observed artifact, and source-derived semantics code-owned activation inputs.
+# Changing any pin requires an explicit renderer change and its regression update.
+GOOSE_COMPATIBILITY_PIN_SHA256 = (
+    "8d8a70c2002b90f01fd10ab081926f00f2c7ee808b786c7a97d1583aa18af4ba"
+)
 
 
 class RenderError(ValueError):
@@ -735,6 +757,15 @@ def _inventory_fingerprint(surface: str, tools: Sequence[str]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _canonical_sha256(value: Any) -> str:
+    canonical = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def load_and_validate_goose_lock(
     policy: dict[str, Any], lock_path: Path = DEFAULT_GOOSE_LOCK
 ) -> dict[str, Any]:
@@ -751,6 +782,51 @@ def load_and_validate_goose_lock(
         raise RenderError("Goose compatibility lock is incomplete")
     if not isinstance(gates, list) or not gates:
         raise RenderError("Goose compatibility lock has no required gates")
+
+    pinned_contract = {
+        name: lock.get(name)
+        for name in (
+            "schema_version",
+            "client",
+            "source_evidence",
+            "artifact_evidence",
+            "goose_semantics",
+        )
+    }
+    if _canonical_sha256(pinned_contract) != GOOSE_COMPATIBILITY_PIN_SHA256:
+        raise RenderError("Goose compatibility source or artifact pins differ from code")
+
+    artifact_evidence = lock["artifact_evidence"]
+    official_digest = artifact_evidence.get("official_linux_x86_64_sha256")
+    official_verified = artifact_evidence.get("official_artifact_verified")
+    digest_is_pinned = isinstance(official_digest, str) and re.fullmatch(
+        r"[0-9a-f]{64}", official_digest
+    ) is not None
+    if official_verified is True:
+        if not digest_is_pinned:
+            raise RenderError("Goose verified official artifact lacks a SHA-256 pin")
+    elif official_verified is False:
+        if official_digest is not None:
+            raise RenderError("Goose unverified official artifact must not claim a digest")
+    else:
+        raise RenderError("Goose official artifact verification flag is invalid")
+
+    expected_decision_fields = {
+        "active_credential_artifacts_allowed",
+        "active_artifacts",
+        "decided_at",
+        "reason",
+    }
+    if set(decision) != expected_decision_fields:
+        raise RenderError("Goose compatibility decision has an invalid shape")
+    if not isinstance(decision["active_credential_artifacts_allowed"], bool):
+        raise RenderError("Goose compatibility activation decision must be boolean")
+    if not isinstance(decision["active_artifacts"], list):
+        raise RenderError("Goose compatibility active artifacts must be a list")
+    if not isinstance(decision["decided_at"], str) or not decision["decided_at"].strip():
+        raise RenderError("Goose compatibility decision date is invalid")
+    if not isinstance(decision["reason"], str) or not decision["reason"].strip():
+        raise RenderError("Goose compatibility decision reason is invalid")
 
     policy_surfaces = {server["surface"]: server for server in policy["servers"]}
     if set(surfaces) != set(policy_surfaces):
@@ -778,14 +854,33 @@ def load_and_validate_goose_lock(
             raise RenderError("Goose extension names must normalize uniquely")
         normalized_names.add(normalized)
 
-    gate_ids = [gate.get("id") for gate in gates if isinstance(gate, dict)]
-    if len(gate_ids) != len(gates) or len(gate_ids) != len(set(gate_ids)):
-        raise RenderError("Goose compatibility lock gates must be unique objects")
-    required_pass = all(
-        gate.get("status") == "pass"
-        for gate in gates
-        if isinstance(gate, dict) and gate.get("required") is True
-    )
+    gate_ids: list[str] = []
+    expected_gate_fields = {"id", "required", "status", "evidence"}
+    for gate in gates:
+        if not isinstance(gate, dict) or set(gate) != expected_gate_fields:
+            raise RenderError("Goose compatibility gates must be exact objects")
+        gate_id = gate["id"]
+        if not isinstance(gate_id, str):
+            raise RenderError("Goose compatibility gate id is invalid")
+        gate_ids.append(gate_id)
+        if gate["required"] is not True:
+            raise RenderError(f"Goose compatibility gate {gate_id!r} must be required")
+        if gate["status"] not in GOOSE_GATE_STATUSES:
+            raise RenderError(f"Goose compatibility gate {gate_id!r} has invalid status")
+        if not isinstance(gate["evidence"], str) or not gate["evidence"].strip():
+            raise RenderError(f"Goose compatibility gate {gate_id!r} lacks evidence")
+    if len(gate_ids) != len(set(gate_ids)):
+        raise RenderError("Goose compatibility lock gate ids must be unique")
+    if frozenset(gate_ids) != GOOSE_REQUIRED_GATE_IDS:
+        raise RenderError("Goose compatibility lock gate set differs from code")
+
+    gates_by_id = {gate["id"]: gate for gate in gates}
+    if (
+        gates_by_id["official_artifact_integrity"]["status"] == "pass"
+        and official_verified is not True
+    ):
+        raise RenderError("Goose artifact-integrity gate contradicts its pinned evidence")
+    required_pass = all(gate["status"] == "pass" for gate in gates)
     active_allowed = decision.get("active_credential_artifacts_allowed") is True
     active_artifacts = decision.get("active_artifacts")
     expected_artifacts = ["goose/recipe.json", "goose/settings.json"]

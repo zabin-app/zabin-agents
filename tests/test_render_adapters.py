@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import os
@@ -199,6 +200,41 @@ class RenderAdapterTests(unittest.TestCase):
         duplicate_gate = copy.deepcopy(lock)
         duplicate_gate["required_gates"].append(copy.deepcopy(duplicate_gate["required_gates"][0]))
         mutations.append(duplicate_gate)
+        removed_gate = copy.deepcopy(lock)
+        removed_gate["required_gates"].pop()
+        mutations.append(removed_gate)
+        renamed_gate = copy.deepcopy(lock)
+        renamed_gate["required_gates"][0]["id"] = "artifact_integrity"
+        mutations.append(renamed_gate)
+        optional_gate = copy.deepcopy(lock)
+        optional_gate["required_gates"][0]["required"] = False
+        mutations.append(optional_gate)
+        unknown_gate = copy.deepcopy(lock)
+        unknown_gate["required_gates"].append(
+            {
+                "id": "new_unreviewed_gate",
+                "required": True,
+                "status": "pass",
+                "evidence": "not part of the code-owned contract",
+            }
+        )
+        mutations.append(unknown_gate)
+        malformed_gate = copy.deepcopy(lock)
+        malformed_gate["required_gates"][0] = "official_artifact_integrity"
+        mutations.append(malformed_gate)
+        extra_gate_field = copy.deepcopy(lock)
+        extra_gate_field["required_gates"][0]["optional"] = True
+        mutations.append(extra_gate_field)
+        missing_gate_evidence = copy.deepcopy(lock)
+        del missing_gate_evidence["required_gates"][0]["evidence"]
+        mutations.append(missing_gate_evidence)
+        empty_gate_evidence = copy.deepcopy(lock)
+        empty_gate_evidence["required_gates"][0]["evidence"] = "  "
+        mutations.append(empty_gate_evidence)
+        for status in ("skip", "PASS", True, None):
+            invalid_status = copy.deepcopy(lock)
+            invalid_status["required_gates"][0]["status"] = status
+            mutations.append(invalid_status)
         with tempfile.TemporaryDirectory() as temporary:
             lock_path = Path(temporary) / "lock.json"
             for index, invalid in enumerate(mutations):
@@ -206,6 +242,71 @@ class RenderAdapterTests(unittest.TestCase):
                     lock_path.write_text(json.dumps(invalid), encoding="utf-8")
                     with self.assertRaises(render_adapters.RenderError):
                         render_adapters.load_and_validate_goose_lock(self.policy, lock_path)
+
+    def test_goose_release_source_artifact_and_semantic_pins_are_code_owned(self) -> None:
+        lock = json.loads(
+            (ROOT / "adapters" / "goose" / "client-lock.json").read_text(encoding="utf-8")
+        )
+        mutations = []
+        for path, replacement in (
+            (("client", "version"), "1.46.0"),
+            (("client", "release_commit"), "0" * 40),
+            (("source_evidence", 0, "sha256"), "0" * 64),
+            (("artifact_evidence", "official_artifact_verified"), True),
+            (("artifact_evidence", "local_observation", "sha256"), "0" * 64),
+            (("goose_semantics", "permission_mode_default"), "approve"),
+        ):
+            invalid = copy.deepcopy(lock)
+            node = invalid
+            for segment in path[:-1]:
+                node = node[segment]
+            node[path[-1]] = replacement
+            mutations.append(invalid)
+        missing_source = copy.deepcopy(lock)
+        missing_source["source_evidence"].pop()
+        mutations.append(missing_source)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            lock_path = Path(temporary) / "lock.json"
+            for index, invalid in enumerate(mutations):
+                with self.subTest(index=index):
+                    lock_path.write_text(json.dumps(invalid), encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        render_adapters.RenderError,
+                        "source or artifact pins differ from code",
+                    ):
+                        render_adapters.load_and_validate_goose_lock(self.policy, lock_path)
+
+    def test_goose_supported_state_cannot_contradict_official_artifact_pin(self) -> None:
+        lock = json.loads(
+            (ROOT / "adapters" / "goose" / "client-lock.json").read_text(encoding="utf-8")
+        )
+        lock["support_status"] = "supported"
+        lock["decision"]["active_credential_artifacts_allowed"] = True
+        lock["decision"]["active_artifacts"] = [
+            "goose/recipe.json",
+            "goose/settings.json",
+        ]
+        for gate in lock["required_gates"]:
+            gate["status"] = "pass"
+        with tempfile.TemporaryDirectory() as temporary:
+            lock_path = Path(temporary) / "lock.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            with self.assertRaisesRegex(render_adapters.RenderError, "contradicts"):
+                render_adapters.load_and_validate_goose_lock(self.policy, lock_path)
+
+    def test_claude_and_codex_outputs_remain_byte_identical_to_contract(self) -> None:
+        expected = {
+            ("claude_code", ".claude/settings.json"): "a34bbfb67872735dc0edbbccee003c85146bba34aa2975abc84477da8a503e3a",
+            ("claude_code", ".mcp.json"): "762eb7983553a07f636986a2ba83668f078de477345168334263b511307ef1a8",
+            ("codex", ".codex/config.toml"): "1c784efc5c5ac547e4c3fe203c4602d352b15979790738785dda6787d65b9701",
+        }
+        for (target, path), digest in expected.items():
+            with self.subTest(target=target, path=path):
+                content = render_adapters.render_target(self.policy, target)[
+                    PurePosixPath(path)
+                ]
+                self.assertEqual(digest, hashlib.sha256(content).hexdigest())
 
     def test_supported_goose_recipe_has_exact_nonempty_allowlists(self) -> None:
         lock = render_adapters.load_and_validate_goose_lock(self.policy)
