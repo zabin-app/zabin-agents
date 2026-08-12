@@ -193,14 +193,18 @@
         "required_fields"
       ],
       "properties": {
-        "client": {"enum": ["claude_code", "codex"]},
-        "config_target": {"enum": [".mcp.json", ".codex/config.toml"]},
+        "client": {"enum": ["claude_code", "codex", "goose"]},
+        "config_target": {
+          "enum": [".mcp.json", ".codex/config.toml", "goose/recipe.json"]
+        },
         "server_key": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
         "credential_binding": {"enum": ["environment_interpolation", "bearer_token_env_var"]},
-        "tool_reference_mode": {"enum": ["client_qualified", "client_native"]},
+        "tool_reference_mode": {
+          "enum": ["client_qualified", "client_native", "extension_qualified"]
+        },
         "required_fields": {
           "type": "array",
           "minItems": 2,

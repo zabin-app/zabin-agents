@@ -47,6 +47,13 @@ class RenderAdapterTests(unittest.TestCase):
             tuple(self.fixture["expected_environment"]),
             render_adapters.required_environment(self.policy),
         )
+        self.assertEqual(
+            self.fixture["expected_goose_extensions"],
+            sorted(
+                render_adapters._adapter_for(server, "goose")["server_key"]
+                for server in self.policy["servers"]
+            ),
+        )
 
     def test_server_identity_mismatch_fails_closed(self) -> None:
         invalid = copy.deepcopy(self.policy)
@@ -151,6 +158,89 @@ class RenderAdapterTests(unittest.TestCase):
         self.assertNotIn("scopes", worker)
         for secret in ENVIRONMENT.values():
             self.assertNotIn(secret, artifacts[PurePosixPath(".codex/config.toml")].decode())
+
+    def test_unsupported_goose_output_is_exact_inert_and_credential_free(self) -> None:
+        artifacts = render_adapters.render_target(self.policy, "goose")
+        self.assertEqual(
+            self.fixture["expected_artifacts"]["goose"],
+            [path.as_posix() for path in artifacts],
+        )
+        expected = {"active": False, "artifacts": [], "support_status": "unsupported"}
+        for path, content in artifacts.items():
+            with self.subTest(path=path):
+                self.assertEqual(expected, json.loads(content))
+                self.assertEqual(
+                    (ROOT / "adapters" / f"{path.as_posix()}.template").read_bytes(),
+                    content,
+                )
+                text = content.decode("utf-8")
+                for forbidden in (
+                    "Authorization",
+                    "ZABIN_MCP_TOKEN",
+                    "ZABIN_MCP_WORKER_TOKEN",
+                    "extensions",
+                    "uri",
+                    "headers",
+                    "available_tools",
+                ):
+                    self.assertNotIn(forbidden, text)
+
+    def test_goose_lock_and_policy_parity_fail_closed(self) -> None:
+        lock = json.loads(
+            (ROOT / "adapters" / "goose" / "client-lock.json").read_text(encoding="utf-8")
+        )
+        mutations = []
+        wrong_inventory = copy.deepcopy(lock)
+        wrong_inventory["canonical_surfaces"]["worker"]["expected_tool_count"] += 1
+        mutations.append(wrong_inventory)
+        active_unsupported = copy.deepcopy(lock)
+        active_unsupported["decision"]["active_credential_artifacts_allowed"] = True
+        mutations.append(active_unsupported)
+        duplicate_gate = copy.deepcopy(lock)
+        duplicate_gate["required_gates"].append(copy.deepcopy(duplicate_gate["required_gates"][0]))
+        mutations.append(duplicate_gate)
+        with tempfile.TemporaryDirectory() as temporary:
+            lock_path = Path(temporary) / "lock.json"
+            for index, invalid in enumerate(mutations):
+                with self.subTest(index=index):
+                    lock_path.write_text(json.dumps(invalid), encoding="utf-8")
+                    with self.assertRaises(render_adapters.RenderError):
+                        render_adapters.load_and_validate_goose_lock(self.policy, lock_path)
+
+    def test_supported_goose_recipe_has_exact_nonempty_allowlists(self) -> None:
+        lock = render_adapters.load_and_validate_goose_lock(self.policy)
+        supported = copy.deepcopy(lock)
+        supported["support_status"] = "supported"
+        supported["decision"]["active_credential_artifacts_allowed"] = True
+        supported["decision"]["active_artifacts"] = [
+            "goose/recipe.json",
+            "goose/settings.json",
+        ]
+        for gate in supported["required_gates"]:
+            if gate["required"]:
+                gate["status"] = "pass"
+        with mock.patch(
+            "scripts.render_adapters.load_and_validate_goose_lock",
+            return_value=supported,
+        ):
+            artifacts = render_adapters.render_target(self.policy, "goose")
+        recipe = json.loads(artifacts[PurePosixPath("goose/recipe.json")])
+        self.assertEqual(2, len(recipe["extensions"]))
+        extensions = {extension["name"]: extension for extension in recipe["extensions"]}
+        self.assertEqual(set(self.fixture["expected_goose_extensions"]), set(extensions))
+        for server in self.policy["servers"]:
+            extension = extensions[render_adapters._adapter_for(server, "goose")["server_key"]]
+            expected_tools = sorted(tool["name"] for tool in server["tools"])
+            self.assertEqual(expected_tools, extension["available_tools"])
+            self.assertTrue(extension["available_tools"])
+            self.assertEqual(server["transport"]["url"], extension["uri"])
+            self.assertEqual(
+                f"Bearer ${{{server['credential']['name']}}}",
+                extension["headers"]["Authorization"],
+            )
+        rendered = b"".join(artifacts.values()).decode("utf-8")
+        for secret in ENVIRONMENT.values():
+            self.assertNotIn(secret, rendered)
 
     def test_template_manifest_is_strict_and_complete(self) -> None:
         render_adapters.validate_template_manifest()
@@ -428,6 +518,43 @@ class RenderAdapterTests(unittest.TestCase):
         self.assertEqual(outputs[0], outputs[1])
         for secret in ENVIRONMENT.values():
             self.assertNotIn(secret, outputs[0])
+
+    def test_unsupported_goose_dry_run_and_check_need_no_credentials(self) -> None:
+        outputs = []
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "goose"
+            for _ in range(2):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(
+                        0,
+                        render_adapters.main(
+                            ["--target", "goose", "--output-dir", str(output), "--dry-run"],
+                            {},
+                        ),
+                    )
+                outputs.append(stdout.getvalue())
+            self.assertFalse(output.exists())
+            self.assertEqual(outputs[0], outputs[1])
+            self.assertEqual(
+                0,
+                render_adapters.main(
+                    ["--target", "goose", "--output-dir", str(output)], {},
+                ),
+            )
+            self.assertEqual(
+                0,
+                render_adapters.main(
+                    ["--target", "goose", "--output-dir", str(output), "--check"], {},
+                ),
+            )
+            (output / "goose" / "settings.json").write_text("{}\n", encoding="utf-8")
+            self.assertEqual(
+                1,
+                render_adapters.main(
+                    ["--target", "goose", "--output-dir", str(output), "--check"], {},
+                ),
+            )
 
     def test_writes_use_atomic_replace_and_check_mode_detects_drift(self) -> None:
         artifacts = render_adapters.render_target(self.policy, "claude_code")

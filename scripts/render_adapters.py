@@ -9,6 +9,7 @@ then performs per-file atomic replacements in a caller-selected directory.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,7 @@ from typing import Any, Callable, Mapping, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / "config" / "zabin-mcp.json"
 DEFAULT_SCHEMA = ROOT / "schemas" / "mcp-policy.schema.json"
+DEFAULT_GOOSE_LOCK = ROOT / "adapters" / "goose" / "client-lock.json"
 TEMPLATE_ROOT = ROOT / "adapters"
 SUPPORTED_SCHEMA_ID = "https://zabin.dev/schemas/mcp-policy.schema.json"
 SUPPORTED_SCHEMA_MAJOR = 1
@@ -99,6 +101,20 @@ TEMPLATES: dict[str, TemplateSpec] = {
         placeholders=frozenset({"MCP_SERVER_IDENTITIES"}),
         syntax="toml",
         admin_only=True,
+    ),
+    "goose_recipe": TemplateSpec(
+        name="goose_recipe",
+        source=PurePosixPath("goose/recipe.json.template"),
+        artifact=PurePosixPath("goose/recipe.json"),
+        placeholders=frozenset(),
+        syntax="json",
+    ),
+    "goose_settings": TemplateSpec(
+        name="goose_settings",
+        source=PurePosixPath("goose/settings.json.template"),
+        artifact=PurePosixPath("goose/settings.json"),
+        placeholders=frozenset(),
+        syntax="json",
     ),
 }
 
@@ -228,12 +244,25 @@ def validate_server_identities(policy: dict[str, Any]) -> None:
             "tool_reference_mode": "client_native",
             "required_fields": {"url", "bearer_token_env_var", "enabled_tools"},
         },
+        "goose": {
+            "config_target": "goose/recipe.json",
+            "credential_binding": "environment_interpolation",
+            "tool_reference_mode": "extension_qualified",
+            "required_fields": {
+                "type",
+                "name",
+                "uri",
+                "headers.Authorization",
+                "available_tools",
+            },
+        },
     }
     seen_ids: set[str] = set()
     seen_surfaces: set[str] = set()
     seen_keys: set[str] = set()
     seen_urls: set[str] = set()
     seen_credentials: set[str] = set()
+    goose_keys: set[str] = set()
 
     for server in servers:
         server_id = server["id"]
@@ -292,10 +321,13 @@ def validate_server_identities(policy: dict[str, Any]) -> None:
                 f"{server_id!r} must declare exactly one adapter for each supported client"
             )
         for adapter in adapters:
-            if adapter["server_key"] != key:
+            expected_key = (
+                f"zabin-{surface}" if adapter["client"] == "goose" else key
+            )
+            if adapter["server_key"] != expected_key:
                 raise RenderError(
                     f"adapter server key does not match identity for {server_id!r}: "
-                    f"{adapter['server_key']!r} != {key!r}"
+                    f"{adapter['server_key']!r} != {expected_key!r}"
                 )
             adapter_expected = expected_adapters[adapter["client"]]
             for field in ("config_target", "credential_binding", "tool_reference_mode"):
@@ -308,12 +340,23 @@ def validate_server_identities(policy: dict[str, Any]) -> None:
                 raise RenderError(
                     f"duplicate required adapter field for {server_id!r}/{adapter['client']}"
                 )
+            missing_fields = adapter_expected["required_fields"] - set(required_fields)
+            if missing_fields:
+                raise RenderError(
+                    f"{adapter['client']!r} adapter for {server_id!r} is missing required fields: "
+                    + ", ".join(sorted(missing_fields))
+                )
             unknown_fields = set(required_fields) - adapter_expected["required_fields"]
             if unknown_fields:
                 raise RenderError(
                     f"unknown required adapter fields for {server_id!r}/{adapter['client']}: "
                     + ", ".join(sorted(unknown_fields))
                 )
+            if adapter["client"] == "goose":
+                normalized = _normalize_goose_extension_name(adapter["server_key"])
+                if not normalized or normalized in goose_keys:
+                    raise RenderError("Goose extension names must normalize uniquely")
+                goose_keys.add(normalized)
 
         seen_ids.add(server_id)
         seen_surfaces.add(surface)
@@ -399,6 +442,8 @@ def validate_template_manifest(
         "claude_settings",
         "codex_config",
         "codex_requirements",
+        "goose_recipe",
+        "goose_settings",
     }
     if set(manifest) != expected_names:
         missing = sorted(expected_names - set(manifest))
@@ -424,7 +469,7 @@ def validate_template_manifest(
             raise RenderError(f"unknown template syntax for {name!r}: {spec.syntax!r}")
         if spec.admin_only != (name == "codex_requirements"):
             raise RenderError(f"template admin-only classification mismatch for {name!r}")
-        if not spec.placeholders:
+        if not spec.placeholders and not name.startswith("goose_"):
             raise RenderError(f"template {name!r} must declare placeholders")
         if spec.source in sources:
             raise RenderError(f"duplicate template source: {spec.source}")
@@ -531,6 +576,20 @@ def _preflight_command(policy: dict[str, Any]) -> str:
 
 def _qualified_tool(server_key: str, tool_name: str) -> str:
     return f"mcp__{server_key}__{tool_name}"
+
+
+def _normalize_goose_extension_name(value: str) -> str:
+    """Mirror the pinned Goose 1.45.0 extension-name normalization."""
+
+    normalized = []
+    for character in value.lower():
+        if character.isspace():
+            continue
+        if character.isascii() and (character.isalnum() or character in {"-", "_"}):
+            normalized.append(character)
+        else:
+            normalized.append("_")
+    return "".join(normalized)
 
 
 def _adapter_for(server: dict[str, Any], target: str) -> dict[str, Any]:
@@ -667,6 +726,128 @@ def _render_codex_requirements(
     }
 
 
+def _inventory_fingerprint(surface: str, tools: Sequence[str]) -> str:
+    canonical = json.dumps(
+        {"surface": surface, "tools": sorted(tools)},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def load_and_validate_goose_lock(
+    policy: dict[str, Any], lock_path: Path = DEFAULT_GOOSE_LOCK
+) -> dict[str, Any]:
+    """Load the pinned Goose decision and require exact canonical-policy parity."""
+
+    lock = _load_json(lock_path.resolve(), "Goose compatibility lock")
+    status = lock.get("support_status")
+    decision = lock.get("decision")
+    surfaces = lock.get("canonical_surfaces")
+    gates = lock.get("required_gates")
+    if status not in {"supported", "unsupported"}:
+        raise RenderError("Goose compatibility lock has an invalid support_status")
+    if not isinstance(decision, dict) or not isinstance(surfaces, dict):
+        raise RenderError("Goose compatibility lock is incomplete")
+    if not isinstance(gates, list) or not gates:
+        raise RenderError("Goose compatibility lock has no required gates")
+
+    policy_surfaces = {server["surface"]: server for server in policy["servers"]}
+    if set(surfaces) != set(policy_surfaces):
+        raise RenderError("Goose compatibility lock surface set differs from policy")
+    normalized_names: set[str] = set()
+    for surface, server in policy_surfaces.items():
+        adapter = _adapter_for(server, "goose")
+        locked = surfaces[surface]
+        if not isinstance(locked, dict):
+            raise RenderError(f"Goose lock surface {surface!r} is invalid")
+        tools = [tool["name"] for tool in server["tools"]]
+        expected = {
+            "extension_name": adapter["server_key"],
+            "normalized_extension_name": _normalize_goose_extension_name(
+                adapter["server_key"]
+            ),
+            "credential_environment": server["credential"]["name"],
+            "expected_tool_count": len(tools),
+            "expected_inventory_sha256": _inventory_fingerprint(surface, tools),
+        }
+        if locked != expected:
+            raise RenderError(f"Goose lock/policy parity failed for {surface!r}")
+        normalized = expected["normalized_extension_name"]
+        if not normalized or normalized in normalized_names:
+            raise RenderError("Goose extension names must normalize uniquely")
+        normalized_names.add(normalized)
+
+    gate_ids = [gate.get("id") for gate in gates if isinstance(gate, dict)]
+    if len(gate_ids) != len(gates) or len(gate_ids) != len(set(gate_ids)):
+        raise RenderError("Goose compatibility lock gates must be unique objects")
+    required_pass = all(
+        gate.get("status") == "pass"
+        for gate in gates
+        if isinstance(gate, dict) and gate.get("required") is True
+    )
+    active_allowed = decision.get("active_credential_artifacts_allowed") is True
+    active_artifacts = decision.get("active_artifacts")
+    expected_artifacts = ["goose/recipe.json", "goose/settings.json"]
+    if status == "supported":
+        if not required_pass or not active_allowed or active_artifacts != expected_artifacts:
+            raise RenderError("Goose supported state lacks complete activation evidence")
+    elif active_allowed or active_artifacts != []:
+        raise RenderError("Goose unsupported state must authorize no active artifacts")
+    return lock
+
+
+def _render_goose(policy: dict[str, Any]) -> dict[PurePosixPath, bytes]:
+    lock = load_and_validate_goose_lock(policy)
+    recipe_spec = TEMPLATES["goose_recipe"]
+    settings_spec = TEMPLATES["goose_settings"]
+    if lock["support_status"] == "unsupported":
+        return {
+            recipe_spec.artifact: _render_template(recipe_spec, {}),
+            settings_spec.artifact: _render_template(settings_spec, {}),
+        }
+
+    extensions = []
+    for server in _ordered_servers(policy):
+        adapter = _adapter_for(server, "goose")
+        tools = [tool["name"] for tool in _ordered_tools(server)]
+        if not tools:
+            raise RenderError(f"Goose allowlist is empty for {server['id']!r}")
+        extensions.append(
+            {
+                "available_tools": tools,
+                "headers": {
+                    "Authorization": f"Bearer ${{{server['credential']['name']}}}"
+                },
+                "name": adapter["server_key"],
+                "timeout": 30,
+                "type": "streamable_http",
+                "uri": server["transport"]["url"],
+            }
+        )
+    recipe = {
+        "description": "Pinned, isolated Zabin MCP recipe.",
+        "extensions": extensions,
+        "instructions": "Use canonical AGENTS.md and .agents/skills without duplication.",
+        "title": "Zabin MCP workflow",
+        "version": "1.0.0",
+    }
+    settings = {
+        "active": True,
+        "artifacts": ["goose/recipe.json", "goose/settings.json"],
+        "client_version": lock["client"]["version"],
+        "explicit_extensions_only": True,
+        "mode": "approve",
+        "support_status": "supported",
+    }
+    return {
+        recipe_spec.artifact: (json.dumps(recipe, indent=2, sort_keys=True) + "\n").encode(),
+        settings_spec.artifact: (
+            json.dumps(settings, indent=2, sort_keys=True) + "\n"
+        ).encode(),
+    }
+
+
 TARGETS: dict[str, TargetSpec] = {
     "claude_code": TargetSpec(
         name="claude_code",
@@ -691,6 +872,16 @@ TARGETS: dict[str, TargetSpec] = {
         supports_tool_filtering=True,
         supports_approval_policy=True,
         renderer=_render_codex_requirements,
+    ),
+    "goose": TargetSpec(
+        name="goose",
+        artifacts=(PurePosixPath("goose/recipe.json"), PurePosixPath("goose/settings.json")),
+        required_fields=frozenset(
+            {"type", "name", "uri", "headers.Authorization", "available_tools"}
+        ),
+        supports_tool_filtering=True,
+        supports_approval_policy=True,
+        renderer=_render_goose,
     ),
 }
 
@@ -862,7 +1053,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
                 "--admin-deployment is valid only with codex_admin_requirements"
             )
         policy = load_and_validate_policy(args.policy, args.schema)
-        if not is_admin_target:
+        if not is_admin_target and args.target != "goose":
             missing = missing_environment(policy, os.environ if environ is None else environ)
             if missing:
                 raise RenderError("missing required environment variables: " + ", ".join(missing))

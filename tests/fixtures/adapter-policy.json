@@ -6,6 +6,10 @@
     ],
     "codex": [
       ".codex/config.toml"
+    ],
+    "goose": [
+      "goose/recipe.json",
+      "goose/settings.json"
     ]
   },
   "expected_environment": [
@@ -14,6 +18,10 @@
   ],
   "expected_server_keys": [
     "zabin",
+    "zabin-worker"
+  ],
+  "expected_goose_extensions": [
+    "zabin-conductor",
     "zabin-worker"
   ],
   "expected_worker_tools": [

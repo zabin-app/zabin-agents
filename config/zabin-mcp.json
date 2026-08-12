@@ -98,7 +98,8 @@
       ],
       "adapter_requirements": [
         {"client": "claude_code", "config_target": ".mcp.json", "server_key": "zabin", "credential_binding": "environment_interpolation", "tool_reference_mode": "client_qualified", "required_fields": ["type", "url", "headers.Authorization"]},
-        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]}
+        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]},
+        {"client": "goose", "config_target": "goose/recipe.json", "server_key": "zabin-conductor", "credential_binding": "environment_interpolation", "tool_reference_mode": "extension_qualified", "required_fields": ["type", "name", "uri", "headers.Authorization", "available_tools"]}
       ]
     },
     {
@@ -151,7 +152,8 @@
       ],
       "adapter_requirements": [
         {"client": "claude_code", "config_target": ".mcp.json", "server_key": "zabin-worker", "credential_binding": "environment_interpolation", "tool_reference_mode": "client_qualified", "required_fields": ["type", "url", "headers.Authorization"]},
-        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin-worker", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]}
+        {"client": "codex", "config_target": ".codex/config.toml", "server_key": "zabin-worker", "credential_binding": "bearer_token_env_var", "tool_reference_mode": "client_native", "required_fields": ["url", "bearer_token_env_var", "enabled_tools"]},
+        {"client": "goose", "config_target": "goose/recipe.json", "server_key": "zabin-worker", "credential_binding": "environment_interpolation", "tool_reference_mode": "extension_qualified", "required_fields": ["type", "name", "uri", "headers.Authorization", "available_tools"]}
       ]
     }
   ]

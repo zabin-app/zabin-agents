@@ -268,6 +268,40 @@ class ContractSchemaTests(unittest.TestCase):
         self.assertEqual("environment", conductor["credential"]["source"])
         self.assertEqual("environment", worker["credential"]["source"])
 
+    def test_goose_requirements_are_exact_and_extension_names_are_unique(self) -> None:
+        policy = load_json("config/zabin-mcp.json")
+        expected_keys = {"conductor": "zabin-conductor", "worker": "zabin-worker"}
+        normalized = set()
+        for server in policy["servers"]:
+            adapters = {
+                requirement["client"]: requirement
+                for requirement in server["adapter_requirements"]
+            }
+            self.assertEqual({"claude_code", "codex", "goose"}, set(adapters))
+            goose = adapters["goose"]
+            self.assertEqual("goose/recipe.json", goose["config_target"])
+            self.assertEqual(expected_keys[server["surface"]], goose["server_key"])
+            self.assertEqual("environment_interpolation", goose["credential_binding"])
+            self.assertEqual("extension_qualified", goose["tool_reference_mode"])
+            self.assertEqual(
+                {"type", "name", "uri", "headers.Authorization", "available_tools"},
+                set(goose["required_fields"]),
+            )
+            normalized.add(goose["server_key"].lower())
+        self.assertEqual(2, len(normalized))
+
+    def test_mcp_schema_rejects_unknown_or_incomplete_goose_adapter(self) -> None:
+        policy = load_json("config/zabin-mcp.json")
+        validator = Draft202012SubsetValidator(load_json("schemas/mcp-policy.schema.json"))
+        invalid = copy.deepcopy(policy)
+        invalid["servers"][0]["adapter_requirements"][2]["client"] = "unknown"
+        with self.assertRaises(SchemaValidationError):
+            validator.validate(invalid)
+        invalid = copy.deepcopy(policy)
+        invalid["servers"][0]["adapter_requirements"][2].pop("required_fields")
+        with self.assertRaises(SchemaValidationError):
+            validator.validate(invalid)
+
     def test_every_public_tool_has_risk_and_approval_metadata(self) -> None:
         policy = load_json("config/zabin-mcp.json")
         for server in policy["servers"]:
