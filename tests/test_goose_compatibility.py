@@ -9,11 +9,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,6 +61,30 @@ FORBIDDEN_INERT_TEMPLATE_KEYS = {
     "extensions",
     "headers",
     "uri",
+}
+SAFE_EXECUTABLE_PATH = os.defpath
+AMBIENT_ENV_CANARIES = {
+    "PATH": "/tmp/ambient-path-canary",
+    "ZABIN_MCP_TOKEN": "ambient-zabin-conductor-canary",
+    "ZABIN_MCP_WORKER_TOKEN": "ambient-zabin-worker-canary",
+    "ANTHROPIC_API_KEY": "ambient-anthropic-canary",
+    "OPENAI_API_KEY": "ambient-openai-canary",
+    "AWS_ACCESS_KEY_ID": "ambient-aws-access-canary",
+    "AWS_SECRET_ACCESS_KEY": "ambient-aws-secret-canary",
+    "AZURE_CLIENT_SECRET": "ambient-azure-secret-canary",
+    "GOOGLE_APPLICATION_CREDENTIALS": "/tmp/ambient-google-credentials-canary.json",
+    "HTTP_PROXY": "http://ambient-http-proxy.invalid:8080",
+    "HTTPS_PROXY": "http://ambient-https-proxy.invalid:8080",
+    "ALL_PROXY": "socks5://ambient-all-proxy.invalid:1080",
+    "NO_PROXY": "ambient-no-proxy.invalid",
+    "http_proxy": "http://ambient-lower-http-proxy.invalid:8080",
+    "https_proxy": "http://ambient-lower-https-proxy.invalid:8080",
+    "all_proxy": "socks5://ambient-lower-all-proxy.invalid:1080",
+    "no_proxy": "ambient-lower-no-proxy.invalid",
+    "LD_PRELOAD": "/tmp/ambient-preload-canary.so",
+    "LD_LIBRARY_PATH": "/tmp/ambient-library-path-canary",
+    "DYLD_INSERT_LIBRARIES": "/tmp/ambient-dyld-preload-canary.dylib",
+    "DYLD_LIBRARY_PATH": "/tmp/ambient-dyld-library-canary",
 }
 
 
@@ -330,23 +356,28 @@ def _native_recipe(port: int) -> dict[str, Any]:
     }
 
 
-def _run_native(binary: Path, path_root: Path, recipe: Path, port: int, token: str | None) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment.pop("ZABIN_MCP_TOKEN", None)
-    environment.pop("ZABIN_MCP_WORKER_TOKEN", None)
-    environment.update(
-        {
-            "GOOSE_PATH_ROOT": os.fspath(path_root),
-            "GOOSE_MODE": "approve",
-            "OPENAI_API_KEY": "loopback-provider-placeholder",
-            "OPENAI_HOST": f"http://127.0.0.1:{port}",
-            "OPENAI_BASE_PATH": "v1/chat/completions",
-        }
-    )
-    if token is None:
-        environment.pop("ZABIN_AUDIT_PROBE_TOKEN", None)
-    else:
+def _closed_native_environment(path_root: Path, port: int, token: str | None) -> dict[str, str]:
+    """Build the complete child environment without consulting ambient state."""
+    environment = {
+        "PATH": SAFE_EXECUTABLE_PATH,
+        "GOOSE_PATH_ROOT": os.fspath(path_root),
+        "GOOSE_MODE": "approve",
+        "OPENAI_API_KEY": "loopback-provider-placeholder",
+        "OPENAI_HOST": f"http://127.0.0.1:{port}",
+        "OPENAI_BASE_PATH": "v1/chat/completions",
+    }
+    if token is not None:
         environment["ZABIN_AUDIT_PROBE_TOKEN"] = token
+    return environment
+
+
+def _run_native(
+    binary: Path,
+    path_root: Path,
+    recipe: Path,
+    port: int,
+    token: str | None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             os.fspath(binary),
@@ -366,7 +397,7 @@ def _run_native(binary: Path, path_root: Path, recipe: Path, port: int, token: s
         capture_output=True,
         text=True,
         timeout=20,
-        env=environment,
+        env=_closed_native_environment(path_root, port, token),
     )
 
 
@@ -620,6 +651,44 @@ class GooseCompatibilityTests(unittest.TestCase):
         for source in self.lock["primary_sources"]:
             self.assertIn(source, self.compatibility)
 
+    def test_closed_native_environment_excludes_ambient_sensitive_state(self) -> None:
+        audit_token = "isolated-child-audit-canary"
+        with tempfile.TemporaryDirectory(prefix="goose-zabin-env-observer-") as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            with mock.patch.dict(os.environ, AMBIENT_ENV_CANARIES, clear=False):
+                environment = _closed_native_environment(root, 43123, audit_token)
+                completed = subprocess.run(
+                    [
+                        os.fspath(Path(sys.executable).resolve()),
+                        "-I",
+                        "-c",
+                        "import json, os; print(json.dumps(dict(os.environ), sort_keys=True))",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=environment,
+                )
+
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            observed = json.loads(completed.stdout)
+            self.assertLessEqual(set(observed), set(environment) | {"LC_CTYPE"})
+            self.assertEqual(SAFE_EXECUTABLE_PATH, observed["PATH"])
+            self.assertEqual(os.fspath(root), observed["GOOSE_PATH_ROOT"])
+            self.assertEqual("loopback-provider-placeholder", observed["OPENAI_API_KEY"])
+            self.assertEqual("http://127.0.0.1:43123", observed["OPENAI_HOST"])
+            self.assertEqual(audit_token, observed["ZABIN_AUDIT_PROBE_TOKEN"])
+            for name, value in AMBIENT_ENV_CANARIES.items():
+                if name in {"PATH", "OPENAI_API_KEY"}:
+                    self.assertNotEqual(value, observed[name])
+                else:
+                    self.assertNotIn(name, observed)
+                self.assertNotIn(value, completed.stdout)
+
+        self.assertFalse(Path(temporary).exists())
+
     def test_optional_native_regressions_are_loopback_isolated_and_cleaned(self) -> None:
         binary_name = os.environ.get("GOOSE_NATIVE_BINARY")
         if not binary_name:
@@ -635,16 +704,15 @@ class GooseCompatibilityTests(unittest.TestCase):
         token = "native-audit-canary-7cf31d19"
         try:
             root.mkdir()
-            environment = os.environ.copy()
-            environment["GOOSE_PATH_ROOT"] = os.fspath(root)
-            completed = subprocess.run(
-                [os.fspath(binary), "--version"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=20,
-                env=environment,
-            )
+            with mock.patch.dict(os.environ, AMBIENT_ENV_CANARIES, clear=False):
+                completed = subprocess.run(
+                    [os.fspath(binary), "--version"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env=_closed_native_environment(root, recorder.port, None),
+                )
             self.assertEqual(0, completed.returncode, completed.stderr)
             self.assertEqual(expected["version_output"], completed.stdout.strip())
             self.assertEqual([], list(root.rglob("secrets.yaml")))
@@ -680,7 +748,8 @@ class GooseCompatibilityTests(unittest.TestCase):
             recipe.write_text(json.dumps(_native_recipe(recorder.port)), encoding="utf-8")
 
             first_start = len(recorder.snapshot())
-            with_secret = _run_native(binary, root, recipe, recorder.port, token)
+            with mock.patch.dict(os.environ, AMBIENT_ENV_CANARIES, clear=False):
+                with_secret = _run_native(binary, root, recipe, recorder.port, token)
             self.assertEqual(0, with_secret.returncode, with_secret.stderr)
             with_secret_events = recorder.snapshot()[first_start:]
             mcp_events = [event for event in with_secret_events if event["path"].endswith("-mcp")]
@@ -705,7 +774,8 @@ class GooseCompatibilityTests(unittest.TestCase):
             self.assertFalse(any(event["tool_name"] == "forbidden" for event in with_secret_events))
 
             missing_start = len(recorder.snapshot())
-            without_secret = _run_native(binary, root, recipe, recorder.port, None)
+            with mock.patch.dict(os.environ, AMBIENT_ENV_CANARIES, clear=False):
+                without_secret = _run_native(binary, root, recipe, recorder.port, None)
             self.assertEqual(0, without_secret.returncode, without_secret.stderr)
             missing_events = recorder.snapshot()[missing_start:]
             self.assertFalse(any(event["path"].endswith("-mcp") for event in missing_events))
@@ -714,8 +784,24 @@ class GooseCompatibilityTests(unittest.TestCase):
             self.assertIn("Failed to start extension 'recipe-probe'", missing_output)
             self.assertIn("continuing without it", missing_output)
 
-            persisted = b"".join(path.read_bytes() for path in root.rglob("*") if path.is_file())
+            child_observations = "\n".join(
+                (
+                    completed.stdout,
+                    completed.stderr,
+                    with_secret.stdout,
+                    with_secret.stderr,
+                    without_secret.stdout,
+                    without_secret.stderr,
+                    json.dumps(recorder.snapshot(), sort_keys=True),
+                )
+            )
+            persisted = b"".join(
+                path.read_bytes() for path in audit_parent.rglob("*") if path.is_file()
+            )
             self.assertNotIn(token.encode("utf-8"), persisted)
+            for value in AMBIENT_ENV_CANARIES.values():
+                self.assertNotIn(value, child_observations)
+                self.assertNotIn(value.encode("utf-8"), persisted)
             self.assertFalse(any(event["method"] == "delete" for event in recorder.snapshot()))
         finally:
             recorder.close()
