@@ -16,13 +16,13 @@ class NativeHostTests(unittest.TestCase):
     def setUp(self) -> None:
         self.lock = run_conformance.load_lock()
         self.policy = json.loads((ROOT / "config" / "zabin-mcp.json").read_text(encoding="utf-8"))
-        self.execution = tempfile.TemporaryDirectory(
+        self.evidence_root = tempfile.TemporaryDirectory(
             prefix=run_conformance.GOOSE_TEMP_PREFIX
         )
-        os.chmod(self.execution.name, 0o700)
+        os.chmod(self.evidence_root.name, 0o700)
 
     def tearDown(self) -> None:
-        self.execution.cleanup()
+        self.evidence_root.cleanup()
 
     def report(self, host: str) -> dict:
         client = self.lock["clients"][host]
@@ -74,7 +74,7 @@ class NativeHostTests(unittest.TestCase):
             "support_status": "unsupported",
             "path_root": {
                 "environment": "GOOSE_PATH_ROOT",
-                "value": os.fspath(Path(self.execution.name) / "goose-root"),
+                "value": os.fspath(Path(self.evidence_root.name) / "goose-root"),
                 "isolated": True,
                 "disposable": True,
                 "production_unchanged": True,
@@ -143,30 +143,71 @@ class NativeHostTests(unittest.TestCase):
                 "fixtures_stopped": True,
             },
         }
-        report["execution"] = run_conformance.goose_execution_attestation(
-            report, self.lock, Path(self.execution.name)
+        report["integrity"] = run_conformance.goose_report_integrity(
+            report, self.lock, Path(self.evidence_root.name)
         )
         return report
 
     def reattest(self, report: dict, root: Path | None = None) -> dict:
-        report.pop("execution", None)
-        report["execution"] = run_conformance.goose_execution_attestation(
-            report, self.lock, root or Path(self.execution.name)
+        report.pop("integrity", None)
+        report["integrity"] = run_conformance.goose_report_integrity(
+            report, self.lock, root or Path(self.evidence_root.name)
         )
         return report
 
-    def test_goose_evidence_is_scored_but_unsupported_lock_prevents_pass(self) -> None:
+    def test_goose_external_report_integrity_does_not_score_native_observations(self) -> None:
         checks = run_conformance.assess_goose_native_report(
             self.goose_report(), self.lock, self.policy, canaries=["synthetic-canary"]
         )
         by_name = {check.name: check for check in checks}
         self.assertEqual("fail", by_name["host_goose_support_gate"].status)
-        self.assertTrue(all(
-            check.status == "pass"
-            for check in checks
-            if check.name != "host_goose_support_gate"
-        ), checks)
+        self.assertEqual("fail", by_name["host_goose_provenance"].status)
+        self.assertEqual("pass", by_name["host_goose_report_integrity"].status)
+        self.assertEqual("fail", by_name["host_goose_pin"].status)
+        self.assertTrue(
+            all(
+                check.status == "fail"
+                for check in checks
+                if check.name
+                != "host_goose_report_integrity"
+            ),
+            checks,
+        )
         self.assertFalse(run_conformance.passed(checks))
+
+    def test_fabricated_perfectly_hashed_report_is_explicitly_untrusted(self) -> None:
+        fabricated = self.goose_report()
+        checks = run_conformance.assess_goose_native_report(
+            fabricated, self.lock, self.policy
+        )
+        by_name = {check.name: check for check in checks}
+        self.assertEqual("pass", by_name["host_goose_report_integrity"].status)
+        self.assertIn("self-consistent", by_name["host_goose_report_integrity"].detail)
+        self.assertEqual("fail", by_name["host_goose_provenance"].status)
+        self.assertEqual("fail", by_name["host_goose_pin"].status)
+        for suffix in (
+            "path_root",
+            "conductor_identity",
+            "conductor_inventory",
+            "conductor_allowed_call",
+            "conductor_forbidden_call",
+            "conductor_auth",
+            "conductor_drift",
+            "worker_identity",
+            "worker_inventory",
+            "worker_allowed_call",
+            "worker_forbidden_call",
+            "worker_auth",
+            "worker_drift",
+            "runtime_policy",
+            "context",
+            "timeout_cancellation",
+            "redaction",
+            "cleanup",
+        ):
+            with self.subTest(check=suffix):
+                self.assertEqual("fail", by_name[f"host_goose_{suffix}"].status)
+                self.assertIn("no trusted execution provenance", by_name[f"host_goose_{suffix}"].detail)
 
     def test_goose_requires_exact_qualified_inventory_and_hidden_tool_absence(self) -> None:
         report = self.goose_report()
@@ -217,13 +258,13 @@ class NativeHostTests(unittest.TestCase):
                     for check in run_conformance.assess_goose_native_report(
                         report, self.lock, self.policy
                     )
-                }["host_goose_evidence_binding"]
+                }["host_goose_report_integrity"]
                 self.assertEqual("fail", binding.status)
 
     def test_goose_path_root_rejects_traversal_symlink_and_production_paths(self) -> None:
         traversal = self.goose_report()
         traversal["path_root"]["value"] = os.fspath(
-            Path(self.execution.name) / ".." / "production" / "goose-root"
+            Path(self.evidence_root.name) / ".." / "production" / "goose-root"
         )
         self.reattest(traversal)
 
@@ -235,7 +276,7 @@ class NativeHostTests(unittest.TestCase):
 
         symlink = self.goose_report()
         symlink_path = Path(symlink["path_root"]["value"])
-        symlink_path.symlink_to(Path(self.execution.name))
+        symlink_path.symlink_to(Path(self.evidence_root.name))
         self.reattest(symlink)
         try:
             for report in (traversal, production, symlink):

@@ -104,7 +104,7 @@ SECRET_PATTERN = re.compile(
 )
 SHA256 = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 GIT_SHA1 = re.compile(r"^[0-9a-f]{40}$")
-GOOSE_OBSERVER_ID = "zabin-conformance/goose-observer-v1"
+GOOSE_EXTERNAL_REPORT_ID = "zabin-conformance/goose-external-report-v1"
 GOOSE_TEMP_PREFIX = "zabin-goose-conformance-"
 
 
@@ -1026,32 +1026,32 @@ def _goose_receipt_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def goose_execution_attestation(
+def goose_report_integrity(
     report: Mapping[str, Any],
     lock: Mapping[str, Any],
-    execution_root: Path,
+    evidence_root: Path,
 ) -> dict[str, Any]:
-    """Create the deterministic envelope emitted by the pinned observer runner.
+    """Create self-consistency metadata for an external Goose report.
 
-    The caller supplies the observation body without ``execution``. Assessment
-    always recomputes both digests, so changing a receipt count or a cleanup
-    boolean after observation invalidates the envelope.
+    These hashes detect mutation after report construction. They are deliberately
+    not an attestation and establish no execution provenance: an external caller
+    can compute every value in this envelope.
     """
 
-    if "execution" in report:
-        raise ConformanceError("Goose observation must be attested exactly once")
+    if "integrity" in report:
+        raise ConformanceError("Goose report integrity may be added exactly once")
     return {
         "schema_version": "1.0.0",
-        "runner": GOOSE_OBSERVER_ID,
-        "runner_sha256": _sha256(Path(__file__).resolve(strict=True)),
-        "runner_lock_sha256": _json_sha256(lock),
-        "root": os.fspath(execution_root),
+        "format": GOOSE_EXTERNAL_REPORT_ID,
+        "implementation_sha256": _sha256(Path(__file__).resolve(strict=True)),
+        "lock_sha256": _json_sha256(lock),
+        "root": os.fspath(evidence_root),
         "evidence_sha256": _json_sha256(report),
         "receipt_sha256": _json_sha256(_goose_receipt_projection(report)),
     }
 
 
-def _canonical_goose_execution_root(value: Any) -> Path | None:
+def _canonical_goose_evidence_root(value: Any) -> Path | None:
     """Accept only a live, private, direct child of the canonical temp root."""
 
     if not isinstance(value, str) or not value:
@@ -1083,6 +1083,19 @@ def _closed_receipt_count(value: Any, expected: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value == expected
 
 
+def _untrusted_goose_observation(
+    name: str,
+    structurally_valid: bool,
+    invalid_detail: str,
+) -> Check:
+    detail = (
+        "external report is structurally consistent but has no trusted execution provenance"
+        if structurally_valid
+        else invalid_detail
+    )
+    return Check(name, "fail", detail)
+
+
 def assess_goose_native_report(
     report: Mapping[str, Any],
     lock: Mapping[str, Any],
@@ -1090,13 +1103,13 @@ def assess_goose_native_report(
     *,
     canaries: Sequence[str] = (),
 ) -> list[Check]:
-    """Score external Goose observations without weakening its support gate."""
+    """Validate external Goose report integrity without trusting its observations."""
 
     required_fields = {
         "schema_version", "host", "version", "binary_sha256",
         "compatibility_lock_sha256", "support_status", "path_root", "surfaces",
         "runtime_policy", "context_discovery", "timeout_cancellation", "logs",
-        "raw_streams_persisted", "cleanup", "execution",
+        "raw_streams_persisted", "cleanup", "integrity",
     }
     if set(report) != required_fields:
         return [Check("host_goose_shape", "fail", "Goose observer report shape is not exact")]
@@ -1108,40 +1121,47 @@ def assess_goose_native_report(
             "Goose is supported by every pinned gate" if goose["supported"] is True else str(goose["reason"]),
         )
     ]
-    execution = report["execution"]
-    body = {key: value for key, value in report.items() if key != "execution"}
-    execution_root = (
-        _canonical_goose_execution_root(execution.get("root"))
-        if isinstance(execution, Mapping)
+    checks.append(
+        Check(
+            "host_goose_provenance",
+            "fail",
+            "external --host-report input is caller-authored; no trusted in-process Goose observer exists",
+        )
+    )
+    integrity = report["integrity"]
+    body = {key: value for key, value in report.items() if key != "integrity"}
+    evidence_root = (
+        _canonical_goose_evidence_root(integrity.get("root"))
+        if isinstance(integrity, Mapping)
         else None
     )
-    execution_ok = (
-        isinstance(execution, Mapping)
-        and set(execution) == {
+    integrity_ok = (
+        isinstance(integrity, Mapping)
+        and set(integrity) == {
             "schema_version",
-            "runner",
-            "runner_sha256",
-            "runner_lock_sha256",
+            "format",
+            "implementation_sha256",
+            "lock_sha256",
             "root",
             "evidence_sha256",
             "receipt_sha256",
         }
-        and execution["schema_version"] == "1.0.0"
-        and execution["runner"] == GOOSE_OBSERVER_ID
-        and execution["runner_sha256"] == _sha256(Path(__file__).resolve(strict=True))
-        and execution["runner_lock_sha256"] == _json_sha256(lock)
-        and execution["evidence_sha256"] == _json_sha256(body)
-        and execution["receipt_sha256"]
+        and integrity["schema_version"] == "1.0.0"
+        and integrity["format"] == GOOSE_EXTERNAL_REPORT_ID
+        and integrity["implementation_sha256"] == _sha256(Path(__file__).resolve(strict=True))
+        and integrity["lock_sha256"] == _json_sha256(lock)
+        and integrity["evidence_sha256"] == _json_sha256(body)
+        and integrity["receipt_sha256"]
         == _json_sha256(_goose_receipt_projection(body))
-        and execution_root is not None
+        and evidence_root is not None
     )
     checks.append(
         Check(
-            "host_goose_evidence_binding",
-            "pass" if execution_ok else "fail",
-            "closed observer evidence and receipt projection match the pinned runner"
-            if execution_ok
-            else "observer evidence is not bound to the pinned isolated execution",
+            "host_goose_report_integrity",
+            "pass" if integrity_ok else "fail",
+            "external report hashes are self-consistent but establish no execution provenance"
+            if integrity_ok
+            else "external report hashes or evidence-root constraints are invalid",
         )
     )
     identity_pass = (
@@ -1152,16 +1172,16 @@ def assess_goose_native_report(
         and report["compatibility_lock_sha256"] == goose["compatibility_lock_sha256"]
         and report["support_status"] == "unsupported"
     )
-    checks.append(Check("host_goose_pin", "pass" if identity_pass else "fail", "observer pins match the audited Goose client" if identity_pass else "observer pins differ from the Goose lock"))
+    checks.append(_untrusted_goose_observation("host_goose_pin", identity_pass, "reported Goose pins differ from the lock"))
 
     path_root = report["path_root"]
     raw_path_value = path_root.get("value") if isinstance(path_root, Mapping) else None
     path_value = Path(raw_path_value) if isinstance(raw_path_value, str) else Path()
     path_is_canonical_child = (
-        execution_root is not None
+        evidence_root is not None
         and path_value.is_absolute()
         and ".." not in path_value.parts
-        and path_value.parent == execution_root
+        and path_value.parent == evidence_root
         and not os.path.lexists(path_value)
     )
     path_pass = (
@@ -1173,7 +1193,7 @@ def assess_goose_native_report(
         and path_root["disposable"] is True
         and path_root["production_unchanged"] is True
     )
-    checks.append(Check("host_goose_path_root", "pass" if path_pass else "fail", "GOOSE_PATH_ROOT is disposable and production state was not touched" if path_pass else "isolated disposable GOOSE_PATH_ROOT was not proven"))
+    checks.append(_untrusted_goose_observation("host_goose_path_root", path_pass, "isolated disposable GOOSE_PATH_ROOT was not proven"))
 
     expected_tools = _expected_host_tools(policy, "goose")
     observed_surfaces = report["surfaces"]
@@ -1209,7 +1229,7 @@ def assess_goose_native_report(
             checks.append(Check(f"{name}_shape", "fail", "surface observation shape is not exact"))
             continue
         identity_ok = observation["extension_name"] == expected_extension and observation["server_identity"] == expected_identity
-        checks.append(Check(f"{name}_identity", "pass" if identity_ok else "fail", "surface identity matches every lock pin" if identity_ok else "surface identity differs from the lock"))
+        checks.append(_untrusted_goose_observation(f"{name}_identity", identity_ok, "surface identity differs from the lock"))
         actual_tools = observation["enumerated_tools"]
         hidden_tool = f"{expected_extension}__conformance_forbidden"
         inventory_ok = (
@@ -1218,13 +1238,13 @@ def assess_goose_native_report(
             and observation["hidden_tool"] == hidden_tool
             and hidden_tool not in actual_tools
         )
-        checks.append(Check(f"{name}_inventory", "pass" if inventory_ok else "fail", "exact qualified inventory is visible and hidden tool is absent" if inventory_ok else "qualified inventory or hidden-tool evidence differs"))
+        checks.append(_untrusted_goose_observation(f"{name}_inventory", inventory_ok, "qualified inventory or hidden-tool evidence differs"))
         allowed = observation["allowed_call"]
         allowed_ok = isinstance(allowed, Mapping) and set(allowed) == {"tool", "success", "receipt_count"} and allowed.get("tool") == f"{expected_extension}__get_task" and allowed.get("success") is True and _closed_receipt_count(allowed.get("receipt_count"), 1)
-        checks.append(Check(f"{name}_allowed_call", "pass" if allowed_ok else "fail", "direct allowed call produced exactly one receipt" if allowed_ok else "allowed dispatch receipt is not exact"))
+        checks.append(_untrusted_goose_observation(f"{name}_allowed_call", allowed_ok, "allowed dispatch receipt is not exact"))
         forbidden = observation["forbidden_call"]
         forbidden_ok = isinstance(forbidden, Mapping) and set(forbidden) == {"tool", "rejected_before_transport", "receipt_count"} and forbidden.get("tool") == hidden_tool and forbidden.get("rejected_before_transport") is True and _closed_receipt_count(forbidden.get("receipt_count"), 0)
-        checks.append(Check(f"{name}_forbidden_call", "pass" if forbidden_ok else "fail", "direct forbidden dispatch was rejected with zero receipts" if forbidden_ok else "forbidden dispatch containment was not proven"))
+        checks.append(_untrusted_goose_observation(f"{name}_forbidden_call", forbidden_ok, "forbidden dispatch containment was not proven"))
         auth = observation["auth"]
         auth_ok = (
             isinstance(auth, Mapping)
@@ -1238,7 +1258,7 @@ def assess_goose_native_report(
                 for case in ("missing", "swapped")
             )
         )
-        checks.append(Check(f"{name}_auth", "pass" if auth_ok else "fail", "missing and swapped credentials were rejected with zero receipts" if auth_ok else "credential-separation evidence is incomplete"))
+        checks.append(_untrusted_goose_observation(f"{name}_auth", auth_ok, "credential-separation evidence is incomplete"))
         drift = observation["drift"]
         drift_ok = (
             isinstance(drift, Mapping)
@@ -1252,20 +1272,20 @@ def assess_goose_native_report(
                 for case in ("server_info", "inventory", "redirect")
             )
         )
-        checks.append(Check(f"{name}_drift", "pass" if drift_ok else "fail", "identity, inventory, and redirect drift were rejected before any credential or request receipt" if drift_ok else "pre-credential drift rejection was not proven"))
+        checks.append(_untrusted_goose_observation(f"{name}_drift", drift_ok, "pre-credential drift rejection was not proven"))
 
     runtime = report["runtime_policy"]
     runtime_ok = isinstance(runtime, Mapping) and set(runtime) == {"mode", "permissions_mutually_exclusive", "default_extensions"} and runtime["mode"] == "approve" and runtime["permissions_mutually_exclusive"] is True and runtime["default_extensions"] == []
-    checks.append(Check("host_goose_runtime_policy", "pass" if runtime_ok else "fail", "approve mode, exclusive permissions, and no defaults were observed" if runtime_ok else "runtime permission or default-extension policy differs"))
+    checks.append(_untrusted_goose_observation("host_goose_runtime_policy", runtime_ok, "runtime permission or default-extension policy differs"))
     context = report["context_discovery"]
     context_ok = isinstance(context, Mapping) and set(context) == {"agents_md", "skills"} and all(isinstance(context.get(kind), Mapping) and set(context[kind]) == {"observed", "marker"} and context[kind]["observed"] is True and isinstance(context[kind]["marker"], str) and bool(context[kind]["marker"]) for kind in ("agents_md", "skills"))
-    checks.append(Check("host_goose_context", "pass" if context_ok else "fail", "AGENTS.md and Agent Skills discovery markers were observed" if context_ok else "shared context discovery evidence is incomplete"))
+    checks.append(_untrusted_goose_observation("host_goose_context", context_ok, "shared context discovery evidence is incomplete"))
     bounded = report["timeout_cancellation"]
     bounded_ok = isinstance(bounded, Mapping) and set(bounded) == {"timeout_seconds", "timed_out", "cancel_requested", "child_terminated"} and isinstance(bounded["timeout_seconds"], (int, float)) and not isinstance(bounded["timeout_seconds"], bool) and 0 < bounded["timeout_seconds"] <= float(lock["timeouts_seconds"]["host"]) and bounded["timed_out"] is True and bounded["cancel_requested"] is True and bounded["child_terminated"] is True
-    checks.append(Check("host_goose_timeout_cancellation", "pass" if bounded_ok else "fail", "timeout was bounded and cancellation terminated the child" if bounded_ok else "bounded timeout and cancellation were not proven"))
+    checks.append(_untrusted_goose_observation("host_goose_timeout_cancellation", bounded_ok, "bounded timeout and cancellation were not proven"))
     logs = report["logs"]
     leaked = not isinstance(logs, str) or any(canary and canary in logs for canary in canaries) or bool(SECRET_PATTERN.search(logs))
-    checks.append(Check("host_goose_redaction", "fail" if leaked else "pass", "credential-like material appears in observer logs" if leaked else "observer logs contain no canary or credential-bearing header"))
+    checks.append(_untrusted_goose_observation("host_goose_redaction", not leaked, "credential-like material appears in observer logs"))
     cleanup = report["cleanup"]
     cleanup_ok = (
         report["raw_streams_persisted"] is False
@@ -1275,7 +1295,7 @@ def assess_goose_native_report(
         and cleanup["path_root_removed"] is True
         and cleanup["fixtures_stopped"] is True
     )
-    checks.append(Check("host_goose_cleanup", "pass" if cleanup_ok else "fail", "temporary root and loopback fixtures were completely removed" if cleanup_ok else "Goose cleanup evidence is incomplete"))
+    checks.append(_untrusted_goose_observation("host_goose_cleanup", cleanup_ok, "Goose cleanup evidence is incomplete"))
     return checks
 
 

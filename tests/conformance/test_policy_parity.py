@@ -510,7 +510,7 @@ class PolicyParityTests(unittest.TestCase):
             self.assertTrue(seen["GOOSE_PATH_ROOT"].startswith("/tmp/"))
             self.assertEqual("approve", seen["GOOSE_MODE"])
 
-    def test_goose_execution_root_requires_private_canonical_temp_child(self) -> None:
+    def test_goose_evidence_root_requires_private_canonical_temp_child(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix=run_conformance.GOOSE_TEMP_PREFIX
         ) as temporary:
@@ -518,28 +518,28 @@ class PolicyParityTests(unittest.TestCase):
             os.chmod(root, 0o700)
             self.assertEqual(
                 root,
-                run_conformance._canonical_goose_execution_root(os.fspath(root)),
+                run_conformance._canonical_goose_evidence_root(os.fspath(root)),
             )
 
             nested = root / f"{run_conformance.GOOSE_TEMP_PREFIX}nested"
             nested.mkdir(mode=0o700)
             self.assertIsNone(
-                run_conformance._canonical_goose_execution_root(os.fspath(nested))
+                run_conformance._canonical_goose_evidence_root(os.fspath(nested))
             )
 
             os.chmod(root, 0o755)
             self.assertIsNone(
-                run_conformance._canonical_goose_execution_root(os.fspath(root))
+                run_conformance._canonical_goose_evidence_root(os.fspath(root))
             )
             os.chmod(root, 0o700)
 
         self.assertIsNone(
-            run_conformance._canonical_goose_execution_root(
+            run_conformance._canonical_goose_evidence_root(
                 os.fspath(Path.home() / ".config" / "goose")
             )
         )
         self.assertIsNone(
-            run_conformance._canonical_goose_execution_root(
+            run_conformance._canonical_goose_evidence_root(
                 "/tmp/zabin-goose-conformance-safe/../production"
             )
         )
