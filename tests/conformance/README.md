@@ -1,0 +1,172 @@
+# Zabin MCP conformance
+
+This suite is deliberately fail closed. Unit tests are the default; live MCP,
+official conformance, native-host observation, and lifecycle evidence are
+separate required checks for a full-pass claim. A required expected failure,
+unscored check, skipped check, stale baseline, missing binary, missing digest,
+or missing evidence makes the overall result `fail`.
+
+## Pinned boundary
+
+The repository's canonical `runner-lock.json` is the sole invocation lock.
+Alternate paths and symlink substitution are rejected, and a code-owned digest
+binds the complete lock contents so a well-formed edit cannot silently replace
+any security pin. The lock records:
+
+- the official `modelcontextprotocol/conformance` action/package version and
+  immutable Git commit digest;
+- the exact Python and Node runtime probes;
+- installed Claude Code and Codex versions and exact noninteractive argv;
+- PI as unsupported, linked to the audited extension lock;
+- exact canonical endpoints, build/protocol identity, inventory counts, and
+  SHA-256 inventory fingerprints;
+- the only accepted official server arguments:
+  `server --url {url} --requirements 2025-11-25`.
+
+The runner does not download anything. Before a live launch, supply paths to an
+already installed official artifact, its transitive lock, and the staged
+dependency tarballs:
+
+```sh
+export ZABIN_CONFORMANCE_ARTIFACT=/absolute/path/to/conformance/dist/index.js
+export ZABIN_CONFORMANCE_TRANSITIVE_LOCK=/absolute/path/to/package-lock.json
+export ZABIN_CONFORMANCE_TRANSITIVE_ARTIFACT_MANIFEST=/absolute/path/to/artifacts.json
+```
+
+The environment supplies paths only. The expected artifact and transitive-lock
+SHA-256 values live in `runner-lock.json` beside the immutable official tag and
+commit anchor. Supplying a digest through the environment cannot alter trust.
+
+The artifact manifest is `{"schema_version":"1.0.0","artifacts":[...]}`.
+Each record supplies the exact `package_path`, `integrity`, and local `artifact`
+tarball for one registry entry in `package-lock.json`. The runner requires an
+exact record set and recomputes every `sha512-...` integrity value; checking only
+the lockfile digest is not treated as dependency verification. Every non-root
+dependency must resolve through `https://registry.npmjs.org/` and carry an exact
+version and SHA-512 integrity; unresolved, local, Git, or integrity-free entries
+fail rather than disappearing from the verification set.
+
+Startup compares every pinned version, digest, command, argument, PI extension
+lock, server identity, and policy fingerprint. An unverified artifact is a
+failure, not a skipped prerequisite. The current repository host has Claude
+Code 2.1.220 and Codex CLI 0.147.0, but no `node`, `npm`, or `pi`; therefore it
+cannot honestly produce a full native/live conformance pass until the exact
+pinned Node runtime and verified official artifact are provisioned.
+
+Node is resolved exactly once and must be the locked absolute, non-symlink,
+regular executable. That same absolute path is retained for both official
+launches. Node version probes and official processes receive a closed child
+environment containing only an isolated `HOME`/`TMPDIR`, the code-owned safe
+`PATH`, and explicitly allowlisted locale/timezone values. Ambient
+`NODE_OPTIONS`, `NODE_PATH`, preload, npm configuration, credentials, and
+unrelated variables are never inherited.
+
+## Unit tests (default)
+
+```sh
+python -m unittest discover -s tests/conformance -p 'test_*.py'
+```
+
+The tests use only fixtures and mocks. They cover strict startup and policy
+parity; exact host commands and configuration source; separate trust, approval,
+activation, and connectivity states; raw/qualified tool names; allowed and
+forbidden receipts; pre-launch missing-secret failure; redaction canaries;
+restricted artifacts; lifecycle ordering and allowlisting; checkpoint
+reconciliation; stale baselines; cleanup; and required pass/fail/skip behavior.
+
+## Static runner
+
+```sh
+python scripts/run_conformance.py
+```
+
+The default command performs no network activity and launches no native host.
+It writes only a redacted mode-0600 JSON report beneath
+`/tmp/codex-artifacts/<checkout-name>/conformance/`. Raw stdout/stderr
+is never written to disk. Missing native-host and lifecycle evidence is reported
+as required `skip`, so this command normally exits nonzero outside a prepared
+conformance environment.
+
+## Native-host observer reports
+
+Claude Code and Codex must be tested separately by a deterministic observer,
+not by asking a model whether setup worked. Pass each redacted report explicitly:
+
+```sh
+python scripts/run_conformance.py \
+  --host-report claude_code=/restricted/claude-report.json \
+  --host-report codex=/restricted/codex-report.json
+```
+
+The exact JSON shape is exercised by `test_native_hosts.py`. It must prove the
+installed configuration source, user/project trust evidence, server approval,
+activation, connected build identity, exact enumerated names, one receipt for a
+direct allowed call, zero receipts for a forbidden call, and zero enumeration or
+invocation when the secret is absent. It must also report complete cleanup and
+that no raw streams were persisted.
+
+Claude's interactive workspace-trust prompt is a separate check. Claude Code
+documents that `--print` skips that dialog, so headless activation is never used
+as evidence of user approval. The lock currently marks interactive trust as not
+automatable; the report is `skip`/untested rather than a fabricated native-host
+pass.
+
+PI is likewise not a native-host pass. The audited PI 0.84.1 and
+`pi-mcp-adapter` 2.22.0 pair remains unsupported by repository policy.
+
+## Lifecycle evidence and production guard
+
+Lifecycle coverage must use a disposable project. A non-disposable project is
+rejected unless its exact id is supplied via both deliberate evidence and an
+explicit allowlist:
+
+```sh
+python scripts/run_conformance.py \
+  --lifecycle-evidence /restricted/disposable-lifecycle.json
+
+python scripts/run_conformance.py \
+  --lifecycle-evidence /restricted/approved-production-observation.json \
+  --allow-project prj_exactly_reviewed
+```
+
+`ZABIN_CONFORMANCE_PROJECT_ALLOWLIST` may hold a comma-separated allowlist for
+controlled automation. Evidence must cover project scoping, incremental plan
+construction, human approval observation, overlap computation, sized worker
+lease, `in_review`, verdict, `validated`, wave gates, completion, release, and
+checkpoint reconciliation. Every stage needs an authoritative reference. A
+checkpoint conflict or an absent/unscored/skipped stage fails. The evidence
+object and each stage use closed schemas; stages must appear exactly once in the
+locked order, with release preceding the terminal checkpoint outcome
+(`consistent` or `zabin_only`). Duplicates, reordering, and extra fields fail.
+
+## Opt-in live probes
+
+The live unit test performs read-only canonical probes against conductor
+`127.0.0.1:50052/mcp` and worker `127.0.0.1:50053/mcp-worker`:
+
+```sh
+ZABIN_RUN_LIVE_CONFORMANCE=1 \
+  python -m unittest discover -s tests/conformance -p 'test_live_mcp.py'
+```
+
+The full runner additionally requires all startup, host, lifecycle, artifact,
+and transitive-lock checks to pass before it launches any client or the official
+runner:
+
+```sh
+python scripts/run_conformance.py --live \
+  --host-report claude_code=/restricted/claude-report.json \
+  --host-report codex=/restricted/codex-report.json \
+  --lifecycle-evidence /restricted/disposable-lifecycle.json
+```
+
+Readiness and every subprocess have bounded timeouts. Temporary official results
+use distinct disposable conductor and worker directories, cleanup is reported,
+and only redacted summaries are persisted. Each surface must independently emit
+exactly one closed-schema `checks.json`; unknown fields/statuses, inconsistent
+nested summaries, skipped/unscored/expected-failure counts, or one surface's
+output standing in for the other all fail. Credential environment variables are
+removed from the official runner's child environment; synthetic canaries detect
+reflection. Identity and readiness must both pass before either official runner
+is launched. Never point the lifecycle portion at a production project merely
+to make a test pass.

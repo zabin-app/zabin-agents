@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0.0",
+  "requirements_revision": "2025-11-25",
+  "official_conformance": {
+    "repository": "https://github.com/modelcontextprotocol/conformance",
+    "action_version": "v0.1.11",
+    "package": "@modelcontextprotocol/conformance",
+    "package_version": "0.1.11",
+    "integrity": {
+      "algorithm": "git-commit-sha1",
+      "digest": "bd1a195ab439841b58d90face7c96333d227e098"
+    },
+    "artifact_environment": "ZABIN_CONFORMANCE_ARTIFACT",
+    "artifact_sha256": "da66070321d0d0137239bdac0b510a95a360aecaf46992c1ba13349b57537bb2",
+    "transitive_lock_environment": "ZABIN_CONFORMANCE_TRANSITIVE_LOCK",
+    "transitive_lock_sha256": "0fea65876736fa7185525137524f324695771c4cd4eb438c4479c434c9a5443b",
+    "transitive_artifact_manifest_environment": "ZABIN_CONFORMANCE_TRANSITIVE_ARTIFACT_MANIFEST",
+    "result_schema": {
+      "schema_version": "1.0.0",
+      "check_status": "passed",
+      "summary_fields": [
+        "passed",
+        "failed",
+        "skipped",
+        "unscored",
+        "expected_failures",
+        "total"
+      ]
+    },
+    "server_arguments": [
+      "server",
+      "--url",
+      "{url}",
+      "--requirements",
+      "2025-11-25"
+    ],
+    "forbidden_arguments": [
+      "--expected-failures",
+      "--suite",
+      "--scenario",
+      "--spec-version",
+      "--force"
+    ]
+  },
+  "runtimes": {
+    "python": {
+      "required": true,
+      "executable": "python3",
+      "version_arguments": ["--version"],
+      "expected_output": "Python 3.14.6"
+    },
+    "node": {
+      "required": true,
+      "executable": "node",
+      "expected_path": "/usr/bin/node",
+      "version_arguments": ["--version"],
+      "expected_output": "v20.19.5"
+    }
+  },
+  "clients": {
+    "claude_code": {
+      "supported": true,
+      "executable": "claude",
+      "version_arguments": ["--version"],
+      "expected_output": "2.1.220 (Claude Code)",
+      "noninteractive_command": [
+        "claude",
+        "--print",
+        "--bare",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{config}",
+        "--permission-mode",
+        "dontAsk",
+        "--allowedTools",
+        "{allowed_tool}",
+        "--output-format",
+        "json",
+        "--no-session-persistence",
+        "{prompt}"
+      ],
+      "config_source": "explicit --mcp-config",
+      "interactive_trust_automatable": false
+    },
+    "codex": {
+      "supported": true,
+      "executable": "codex",
+      "version_arguments": ["--version"],
+      "expected_output": "codex-cli 0.147.0",
+      "noninteractive_command": [
+        "codex",
+        "exec",
+        "--ephemeral",
+        "--strict-config",
+        "--sandbox",
+        "read-only",
+        "--json",
+        "-C",
+        "{project}",
+        "{prompt}"
+      ],
+      "config_source": "project .codex/config.toml",
+      "interactive_trust_automatable": false
+    },
+    "pi": {
+      "supported": false,
+      "reason": "The audited PI 0.84.1 and pi-mcp-adapter 2.22.0 pair fails the repository policy audit.",
+      "executable": "pi",
+      "expected_output": null,
+      "noninteractive_command": null,
+      "extension_lock": "adapters/pi/extension-lock.json",
+      "extension_lock_sha256": "sha256:148b35faa3c9e06320e31289462553de49296f869e8edbef83a32e47c71ae679"
+    }
+  },
+  "servers": {
+    "conductor": {
+      "url": "http://127.0.0.1:50052/mcp",
+      "credential_environment": "ZABIN_MCP_TOKEN",
+      "service_name": "zabin",
+      "server_info_name": "zabin-mcp",
+      "surface": "conductor",
+      "version": "0.1.0",
+      "protocol_version": "2025-11-25",
+      "tool_count": 52,
+      "inventory_sha256": "673957c5aaee47147b4383c065d3de2f093133598386cc97276e8feaff9aaea9"
+    },
+    "worker": {
+      "url": "http://127.0.0.1:50053/mcp-worker",
+      "credential_environment": "ZABIN_MCP_WORKER_TOKEN",
+      "service_name": "zabin",
+      "server_info_name": "zabin-mcp",
+      "surface": "worker",
+      "version": "0.1.0",
+      "protocol_version": "2025-11-25",
+      "tool_count": 17,
+      "inventory_sha256": "c13e61890aca3d463049bd0ac7df822a068e1fc5df679d32cd59e93942494929"
+    }
+  },
+  "timeouts_seconds": {
+    "version_probe": 5,
+    "readiness": 10,
+    "host": 60,
+    "conformance": 300
+  },
+  "lifecycle": {
+    "required_stages": [
+      "project_scope",
+      "incremental_plan",
+      "approval_observed",
+      "overlap_report",
+      "sized_worker_lease",
+      "in_review",
+      "verdict",
+      "validated",
+      "wave_gates",
+      "completion",
+      "release",
+      "checkpoint_reconciliation"
+    ],
+    "minimum_worker_lease_seconds": 1800,
+    "production_project_allowlist_environment": "ZABIN_CONFORMANCE_PROJECT_ALLOWLIST"
+  }
+}
