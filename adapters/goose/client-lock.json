@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0.0",
+  "support_status": "unsupported",
+  "decision": {
+    "active_credential_artifacts_allowed": false,
+    "active_artifacts": [],
+    "decided_at": "2026-08-12",
+    "reason": "Goose sends resolved HTTP credentials before it can verify the expected MCP surface identity, and its mutable permission model is not an immutable approval boundary."
+  },
+  "client": {
+    "name": "goose",
+    "license": "Apache-2.0",
+    "version": "1.45.0",
+    "release_tag": "v1.45.0",
+    "release_commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+    "source_audit_commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+    "release_url": "https://github.com/aaif-goose/goose/releases/tag/v1.45.0",
+    "source_url": "https://github.com/aaif-goose/goose"
+  },
+  "source_evidence": [
+    {
+      "path": "crates/goose/src/agents/extension_manager.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "1b2c735c3df89e0222f293bf15c51fdf40c633d9ea5f58812e09a9d5d0d9c7aa"
+    },
+    {
+      "path": "crates/goose/src/agents/mcp_client.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "41c2f4740a679f9c646565eeb4c4c0ae2c323bb81834b06df0f0f5925815b35e"
+    },
+    {
+      "path": "crates/goose/src/config/extensions.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "d335231de1d2702723354f4d635903fc6c649fa3c8651b892cec11314ae9fd1c"
+    },
+    {
+      "path": "crates/goose/src/config/permission.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "b01629c770ad0909e274239dedf650787c8df7961257f32ff8d2fc77e02f12a6"
+    },
+    {
+      "path": "crates/goose/src/recipe/mod.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "95887d76180a1f9b2277eafd97afda9058709fb99bcbc2f17828a3e03a08880d"
+    },
+    {
+      "path": "crates/goose/src/recipe/recipe_extension_adapter.rs",
+      "commit": "4dc0420f5704a92806c6628c8f0a3497d7a88759",
+      "sha256": "ab18d536806e051b4913975c0054fc348ffbe69a5c82f1b869138bea0e0c7aa5"
+    }
+  ],
+  "artifact_evidence": {
+    "official_linux_x86_64_sha256": null,
+    "official_artifact_verified": false,
+    "local_observation": {
+      "version_output": "1.45.0",
+      "sha256": "9ef3ae45d819e41d1b7bcb1533033765d1e1876aba4a35ff0f6e722337512b3b",
+      "provenance": "observed local executable only; not accepted as official release-artifact proof"
+    }
+  },
+  "canonical_surfaces": {
+    "conductor": {
+      "extension_name": "zabin-conductor",
+      "normalized_extension_name": "zabin-conductor",
+      "credential_environment": "ZABIN_MCP_TOKEN",
+      "expected_tool_count": 52,
+      "expected_inventory_sha256": "673957c5aaee47147b4383c065d3de2f093133598386cc97276e8feaff9aaea9"
+    },
+    "worker": {
+      "extension_name": "zabin-worker",
+      "normalized_extension_name": "zabin-worker",
+      "credential_environment": "ZABIN_MCP_WORKER_TOKEN",
+      "expected_tool_count": 17,
+      "expected_inventory_sha256": "c13e61890aca3d463049bd0ac7df822a068e1fc5df679d32cd59e93942494929"
+    }
+  },
+  "goose_semantics": {
+    "tool_qualification": "<normalized-extension>__<server-tool>",
+    "extension_name_normalization": "lowercase; remove whitespace; preserve ASCII alphanumeric, hyphen, and underscore; replace each remaining character with underscore",
+    "available_tools_empty_means": "allow_all",
+    "permission_mode_required_for_evaluation": "approve",
+    "permission_mode_default": "auto",
+    "permission_conflict_precedence": [
+      "always_allow",
+      "ask_before",
+      "never_allow"
+    ],
+    "explicit_recipe_extensions_replace_profile": true,
+    "secret_resolution_order": "resolve URI and headers, build authenticated client, send initialize, then retain returned serverInfo"
+  },
+  "required_gates": [
+    {
+      "id": "official_artifact_integrity",
+      "required": true,
+      "status": "fail",
+      "evidence": "The installed executable was observed and hashed, but no matching official platform-asset digest was acquired and verified."
+    },
+    {
+      "id": "dual_surface_qualification",
+      "required": true,
+      "status": "pass",
+      "evidence": "Pinned source qualifies remote tools as normalized-extension__server-tool; the two canonical extension names normalize distinctly."
+    },
+    {
+      "id": "nonempty_tool_allowlists",
+      "required": true,
+      "status": "pass",
+      "evidence": "Pinned source enforces available_tools during enumeration and before dispatch; repository regressions reject empty allowlists because Goose treats empty as allow all."
+    },
+    {
+      "id": "credential_indirection_and_redaction",
+      "required": true,
+      "status": "fail",
+      "evidence": "An isolated v1.45.0 run proves a missing header secret prevents any MCP receipt while Goose continues without the extension. A configured secret is expanded only in memory and was absent from the temporary root after the run; this fail-open extension loss still cannot support authenticated Zabin operation."
+    },
+    {
+      "id": "identity_before_credential",
+      "required": true,
+      "status": "fail",
+      "evidence": "A loopback hostile server receives the expanded bearer on its first initialize request and only then returns serverInfo; exact release source confirms server_info is retained after client.serve initializes."
+    },
+    {
+      "id": "permission_exclusivity",
+      "required": true,
+      "status": "fail",
+      "evidence": "Digest-pinned config/permission.rs checks always_allow, ask_before, then never_allow. Source-parity and native approve-mode regressions place one principal in all three lists; Goose invokes it without prompting, proving always_allow wins while runtime state remains mutable."
+    },
+    {
+      "id": "headless_approval_boundary",
+      "required": true,
+      "status": "fail",
+      "evidence": "No immutable externally brokered approval contract is documented for unattended Goose runs."
+    },
+    {
+      "id": "hook_fail_closed_enforcement",
+      "required": true,
+      "status": "fail",
+      "evidence": "Hook failures and timeouts are logged and execution continues; hooks cannot be the mandatory authorization or startup identity boundary."
+    },
+    {
+      "id": "recipe_and_workspace_trust",
+      "required": true,
+      "status": "fail",
+      "evidence": "CLI recipe trust and workspace trust are not mandatory native gates; MCP instructions are accepted into agent context."
+    },
+    {
+      "id": "sandbox_containment",
+      "required": true,
+      "status": "fail",
+      "evidence": "Native Developer and stdio extensions execute with Goose process authority, and MCP roots are advisory."
+    },
+    {
+      "id": "cleanup_and_drift",
+      "required": true,
+      "status": "fail",
+      "evidence": "The optional native regression removes its exact temporary GOOSE_PATH_ROOT and recorder, proves no expanded bearer residue, and observes no MCP delete operation. Goose ordinarily creates session/project/log artifacts, so active install cleanup and drift still require a later transactional implementation."
+    }
+  ],
+  "blocking_reasons": [
+    "Expected MCP surface identity cannot be authenticated before bearer-header release.",
+    "Secret-safe generated Authorization-header indirection is not a documented stable contract.",
+    "The default autonomous mode bypasses approvals and persistent permission state is mutable.",
+    "Hook failure and timeout behavior is fail open for the required enforcement boundary.",
+    "There is no mandatory CLI workspace/recipe trust boundary or general native sandbox.",
+    "Official platform artifact integrity, active-install cleanup, and drift evidence are incomplete."
+  ],
+  "reevaluation_requirements": [
+    "Pin and verify the exact official platform artifact digest.",
+    "Prove bearer indirection, missing-secret containment, and redaction without persisting a token value.",
+    "Authenticate the expected logical surface, protocol, and inventory before releasing or exchanging its credential.",
+    "Prove exact non-empty per-surface allowlists, qualified collision isolation, forbidden dispatch rejection, and zero forbidden server receipts.",
+    "Enforce approve mode and mutually exclusive per-tool permissions below mutable user configuration.",
+    "Provide an authorization and startup identity boundary whose failures and timeouts deny execution rather than relying on Goose hooks.",
+    "Provide mandatory recipe/workspace trust and an enforceable process/filesystem isolation boundary.",
+    "Prove transactional install, cleanup, rollback, and source/target/policy/version/inventory drift handling."
+  ],
+  "primary_sources": [
+    "https://goose-docs.ai/docs/guides/config-files/",
+    "https://goose-docs.ai/docs/guides/goose-permissions/",
+    "https://goose-docs.ai/docs/guides/managing-tools/tool-permissions/",
+    "https://goose-docs.ai/docs/guides/recipes/recipe-reference/",
+    "https://goose-docs.ai/docs/guides/context-engineering/hooks/",
+    "https://goose-docs.ai/docs/guides/context-engineering/using-goosehints/",
+    "https://goose-docs.ai/docs/guides/context-engineering/using-skills/",
+    "https://github.com/aaif-goose/goose/blob/4dc0420f5704a92806c6628c8f0a3497d7a88759/crates/goose/src/agents/extension_manager.rs",
+    "https://github.com/aaif-goose/goose/blob/4dc0420f5704a92806c6628c8f0a3497d7a88759/crates/goose/src/agents/mcp_client.rs",
+    "https://github.com/aaif-goose/goose/blob/4dc0420f5704a92806c6628c8f0a3497d7a88759/crates/goose/src/config/extensions.rs",
+    "https://github.com/aaif-goose/goose/blob/4dc0420f5704a92806c6628c8f0a3497d7a88759/crates/goose/src/config/permission.rs",
+    "https://github.com/aaif-goose/goose/blob/4dc0420f5704a92806c6628c8f0a3497d7a88759/crates/goose/src/recipe/recipe_extension_adapter.rs"
+  ]
+}
