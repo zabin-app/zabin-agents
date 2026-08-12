@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tomllib
@@ -137,6 +138,7 @@ class InstallReport:
     workspace_trust: str
     server_approval: str
     activation: str
+    target_activation: Mapping[str, str]
     changes: tuple[str, ...]
     checksums: Mapping[str, str]
     backups: Mapping[str, str]
@@ -145,6 +147,7 @@ class InstallReport:
     def as_dict(self) -> dict[str, Any]:
         return {
             "activation": self.activation,
+            "target_activation": dict(sorted(self.target_activation.items())),
             "backups": dict(sorted(self.backups.items())),
             "changes": list(self.changes),
             "checksums": dict(sorted(self.checksums.items())),
@@ -1207,6 +1210,7 @@ def plan_install(options: InstallOptions) -> tuple[list[PlannedChange], str]:
         raise InstallError("invalid trust or server approval state")
     if options.activation not in ACTIVATION_STATES:
         raise InstallError("invalid activation state")
+    _target_activation(options)
     destinations = options.destinations
     for label, path in (("project destination", destinations.project), ("skills destination", destinations.skills), ("instructions destination", destinations.instructions)):
         _safe_path(path, label)
@@ -1278,6 +1282,7 @@ def _atomic_apply(
     backups: dict[Path, Path | None] = {}
     backup_checksums: dict[str, str] = {}
     installed: list[PlannedChange] = []
+    installation_verified = False
     try:
         for change in pending:
             _assert_observed(change)
@@ -1355,7 +1360,34 @@ def _atomic_apply(
                     os.close(directory_fd)
             except OSError:
                 pass
+        installation_verified = True
+        for change in pending:
+            destination = change.destination
+            backup = backups[destination]
+            if backup is None:
+                continue
+            expected = change.observed
+            if expected is None or _capture_state(backup) != expected:
+                raise InstallError(f"backup changed before cleanup: {backup}")
+            if expected.kind == "directory":
+                shutil.rmtree(backup)
+            else:
+                backup.unlink()
+            backup_checksums.pop(os.fspath(backup), None)
+            try:
+                directory_fd = os.open(backup.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
     except (OSError, InstallError) as exc:
+        if installation_verified:
+            raise InstallError(
+                "installation succeeded but transaction backup cleanup failed: "
+                f"{getattr(exc, 'strerror', None) or exc}"
+            ) from exc
         rollback_errors = []
         for change in reversed(installed):
             destination = change.destination
@@ -1386,8 +1418,24 @@ def _atomic_apply(
     return tuple(os.fspath(change.destination) for change in pending), backup_checksums
 
 
+def _target_activation(options: InstallOptions) -> dict[str, str]:
+    """Resolve the claimed activation independently for every selected client."""
+
+    states = {target: options.activation for target in dict.fromkeys(options.targets)}
+    if "goose" not in states:
+        return states
+    policy = render_adapters.load_and_validate_policy(
+        render_adapters.DEFAULT_POLICY, render_adapters.DEFAULT_SCHEMA
+    )
+    lock = render_adapters.load_and_validate_goose_lock(policy)
+    if lock["support_status"] != "supported" and options.activation == "active":
+        raise InstallError("cannot report active activation for unsupported Goose")
+    return states
+
+
 def install(options: InstallOptions) -> InstallReport:
     changes, provenance = plan_install(options)
+    target_activation = _target_activation(options)
     differing = tuple(os.fspath(change.destination) for change in changes if _has_drift(change))
     if options.mode == "dry-run":
         status = "planned"
@@ -1405,6 +1453,7 @@ def install(options: InstallOptions) -> InstallReport:
         workspace_trust=options.workspace_trust,
         server_approval=options.server_approval,
         activation=options.activation,
+        target_activation=target_activation,
         changes=differing,
         checksums=checksums,
         backups=backups,

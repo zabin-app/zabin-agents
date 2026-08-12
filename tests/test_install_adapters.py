@@ -56,6 +56,14 @@ class InstallAdaptersTests(unittest.TestCase):
         )
         return canonical
 
+    def assert_no_transaction_backups(
+        self, destinations: install_adapters.Destinations | None = None
+    ) -> None:
+        selected = destinations or self.destinations
+        for root in (selected.project, selected.skills, selected.instructions):
+            if root.exists():
+                self.assertEqual([], list(root.rglob(".*.zabin-backup-*")))
+
     def supported_goose_lock(self) -> dict[str, object]:
         lock = json.loads(
             (install_adapters.ROOT / "adapters" / "goose" / "client-lock.json").read_text(
@@ -242,15 +250,36 @@ class InstallAdaptersTests(unittest.TestCase):
         self.assertTrue(recipe.is_file())
         self.assertTrue(settings.is_file())
         self.assertEqual(manifest_before, manifest.read_bytes())
+        self.assert_no_transaction_backups()
 
         removed = install_adapters.install(self.options(targets=("goose",)))
         self.assertFalse(recipe.exists())
         self.assertFalse(settings.exists())
-        self.assertTrue(removed.backups)
-        self.assertTrue(
-            all(Path(path).parent == recipe.parent for path in removed.backups if "recipe" in path or "settings" in path)
-        )
+        self.assertEqual({}, removed.backups)
+        self.assert_no_transaction_backups()
         self.assertNotIn("render:goose", manifest.read_text(encoding="utf-8"))
+
+    def test_unsupported_goose_rejects_active_activation_before_writes(self) -> None:
+        with self.assertRaisesRegex(
+            install_adapters.InstallError,
+            "active activation for unsupported Goose",
+        ):
+            install_adapters.install(
+                self.options(
+                    "dry-run", targets=("claude_code", "goose"), activation="active"
+                )
+            )
+        self.assertFalse(self.destinations.project.exists())
+
+    def test_mixed_targets_report_activation_per_target(self) -> None:
+        report = install_adapters.install(
+            self.options("dry-run", targets=("claude_code", "codex", "goose"))
+        ).as_dict()
+        self.assertEqual("inactive", report["activation"])
+        self.assertEqual(
+            {"claude_code": "inactive", "codex": "inactive", "goose": "inactive"},
+            report["target_activation"],
+        )
 
     def test_goose_lock_input_drift_changes_provenance_without_active_output(self) -> None:
         options = self.options(targets=("goose",))
@@ -417,9 +446,8 @@ class InstallAdaptersTests(unittest.TestCase):
                     self.assertTrue(destination.exists() or destination.is_symlink())
                     installed = install_adapters.install(options)
                     self.assertFalse(destination.exists() or destination.is_symlink())
-                    self.assertTrue(
-                        any(Path(path).parent == destination.parent for path in installed.backups)
-                    )
+                    self.assertEqual({}, installed.backups)
+                    self.assert_no_transaction_backups(destinations)
                     self.assertEqual(
                         "verified",
                         install_adapters.install(
@@ -450,10 +478,8 @@ class InstallAdaptersTests(unittest.TestCase):
                     tree.rmdir()
                     report = install_adapters.install(options)
                     self.assertFalse(installed_tree.exists())
-                    backups = [Path(path) for path in report.backups]
-                    tree_backups = [path for path in backups if path.parent == installed_tree.parent]
-                    self.assertEqual(1, len(tree_backups))
-                    self.assertTrue(tree_backups[0].is_dir())
+                    self.assertEqual({}, report.backups)
+                    self.assert_no_transaction_backups(destinations)
                     self.assertEqual(
                         "verified",
                         install_adapters.install(
@@ -548,9 +574,8 @@ class InstallAdaptersTests(unittest.TestCase):
             destinations = {entry["destination"] for entry in manifest["entries"].values()}
             self.assertNotIn(os.fspath(old_destination), destinations)
             self.assertIn(os.fspath(new_destination), destinations)
-            self.assertTrue(
-                any(Path(path).parent == old_destination.parent for path in report.backups)
-            )
+            self.assertEqual({}, report.backups)
+            self.assert_no_transaction_backups()
 
     def test_user_modified_or_retargeted_stale_asset_is_never_deleted(self) -> None:
         for mode in ("copy", "symlink"):
@@ -710,7 +735,7 @@ class InstallAdaptersTests(unittest.TestCase):
         with self.assertRaisesRegex(install_adapters.InstallError, "overlaps its canonical source"):
             install_adapters.install(self.options(destinations=overlap))
 
-    def test_transaction_rolls_back_and_retains_backup_on_successful_update(self) -> None:
+    def test_transaction_rolls_back_and_removes_backup_on_successful_update(self) -> None:
         install_adapters.install(self.options())
         settings_path = self.destinations.project / ".claude" / "settings.json"
         original_settings = settings_path.read_bytes()
@@ -733,11 +758,12 @@ class InstallAdaptersTests(unittest.TestCase):
             with self.assertRaisesRegex(install_adapters.InstallError, "transaction failed"):
                 install_adapters.install(self.options())
         self.assertEqual(json.dumps(settings).encode(), settings_path.read_bytes())
+        self.assert_no_transaction_backups()
 
         installed = install_adapters.install(self.options())
         self.assertEqual("installed", installed.installation)
-        self.assertTrue(installed.backups)
-        self.assertTrue(all(Path(path).exists() for path in installed.backups))
+        self.assertEqual({}, installed.backups)
+        self.assert_no_transaction_backups()
 
     def test_destination_local_backups_avoid_cross_filesystem_renames(self) -> None:
         install_adapters.install(self.options())
@@ -751,14 +777,8 @@ class InstallAdaptersTests(unittest.TestCase):
         with mock.patch("scripts.install_adapters.os.replace", side_effect=reject_cross_parent):
             report = install_adapters.install(self.options("symlink"))
         self.assertEqual("installed", report.installation)
-        self.assertTrue(report.backups)
-        self.assertTrue(all(Path(path).exists() for path in report.backups))
-        self.assertTrue(
-            any(Path(path).parent == self.destinations.skills / "conductor" for path in report.backups)
-        )
-        self.assertTrue(
-            any(Path(path).parent == self.destinations.instructions for path in report.backups)
-        )
+        self.assertEqual({}, report.backups)
+        self.assert_no_transaction_backups()
 
     def test_destination_and_symlink_source_races_fail_before_replacement(self) -> None:
         changes, _ = install_adapters.plan_install(self.options())
@@ -798,6 +818,10 @@ class InstallAdaptersTests(unittest.TestCase):
         self.assertEqual("pending", report["workspace_trust"])
         self.assertEqual("approved", report["server_approval"])
         self.assertEqual("inactive", report["activation"])
+        self.assertEqual(
+            {"claude_code": "inactive", "codex": "inactive"},
+            report["target_activation"],
+        )
         self.assertIn("does not grant workspace trust", report["state_notice"])
         self.assertIn("hostile local actor", report["race_notice"])
 
