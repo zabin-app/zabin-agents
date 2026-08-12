@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -120,6 +121,7 @@ class ZabinDoctorTests(unittest.TestCase):
                 "agent_and_model_contracts",
                 "recovery_compatibility",
                 "adapter_readiness",
+                "goose_compatibility",
                 "canonical_surface_fingerprints",
             },
             {check["name"] for check in report["checks"]},
@@ -127,6 +129,60 @@ class ZabinDoctorTests(unittest.TestCase):
         serialized = json.dumps(report)
         for secret in SECRETS.values():
             self.assertNotIn(secret, serialized)
+        goose = next(check for check in report["checks"] if check["name"] == "goose_compatibility")
+        self.assertEqual("unsupported", goose["support_status"])
+        self.assertEqual([], goose["active_artifacts"])
+        self.assertTrue(goose["blocking_gate_ids"])
+        self.assertIn("active artifacts are disabled", goose["detail"])
+
+    def test_explicit_goose_binary_probe_reports_local_pin_without_support_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "goose"
+            binary.write_bytes(b"pinned-goose-test-binary")
+            binary.chmod(0o700)
+            digest = zabin_doctor.hashlib.sha256(binary.read_bytes()).hexdigest()
+            lock = json.loads(
+                (ROOT / "adapters" / "goose" / "client-lock.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            lock["artifact_evidence"]["local_observation"]["sha256"] = digest
+            completed = zabin_doctor.subprocess.CompletedProcess(
+                [str(binary), "--version"], 0, "1.45.0\n", ""
+            )
+            with mock.patch(
+                "scripts.render_adapters.load_and_validate_goose_lock",
+                return_value=lock,
+            ), mock.patch("scripts.zabin_doctor.subprocess.run", return_value=completed) as run:
+                check = zabin_doctor.diagnose_goose_binary(binary, POLICY)
+        self.assertEqual("degraded", check["status"])
+        self.assertEqual("unsupported", check["support_status"])
+        self.assertTrue(check["version_matches"])
+        self.assertTrue(check["digest_matches"])
+        self.assertFalse(check["official_artifact_verified"])
+        self.assertIn("support remains disabled", check["detail"])
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual({"GOOSE_PATH_ROOT", "PATH"}, set(environment))
+        self.assertFalse(any(secret in json.dumps(check) for secret in SECRETS.values()))
+
+    def test_goose_binary_drift_fails_actionably_and_symlinks_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "goose"
+            binary.write_bytes(b"not-the-pinned-binary")
+            binary.chmod(0o700)
+            completed = zabin_doctor.subprocess.CompletedProcess(
+                [str(binary), "--version"], 0, "9.9.9\n", ""
+            )
+            with mock.patch("scripts.zabin_doctor.subprocess.run", return_value=completed):
+                drift = zabin_doctor.diagnose_goose_binary(binary, POLICY)
+            link = root / "goose-link"
+            link.symlink_to(binary)
+            refused = zabin_doctor.diagnose_goose_binary(link, POLICY)
+        self.assertEqual("fail", drift["status"])
+        self.assertFalse(drift["version_matches"])
+        self.assertEqual("fail", refused["status"])
+        self.assertIn("non-symlink regular file", refused["detail"])
 
     def test_live_probe_checks_exact_surfaces_auth_boundaries_and_degrades_retrieval(self) -> None:
         transport = FakeMcpTransport()
@@ -208,6 +264,7 @@ class ZabinDoctorTests(unittest.TestCase):
         help_text = parser.format_help()
         self.assertNotIn("http://127.0.0.1:50051/mcp", help_text)
         self.assertIn("explicitly configured Streamable HTTP gateway", help_text)
+        self.assertIn("--goose-binary", help_text)
         args = parser.parse_args(
             ["--live", "--live-url", "http://127.0.0.1:50051/mcp", "--json"]
         )

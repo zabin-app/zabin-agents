@@ -823,6 +823,90 @@ def _read_existing_config(path: Path, syntax: str) -> tuple[dict[str, Any], File
     return value, state
 
 
+def _plan_goose_configs(
+    options: InstallOptions,
+    manifest: Mapping[str, Any],
+    policy: dict[str, Any],
+) -> list[PlannedChange]:
+    """Plan only lock-authorized, isolated Goose artifacts.
+
+    Goose configuration is never structurally merged into a native
+    ``config.yaml``.  The compatibility lock is the complete allowlist: an
+    unsupported decision therefore plans no active Goose file at all, even
+    though the renderer exposes inert placeholders for inspection.
+    """
+
+    lock = render_adapters.load_and_validate_goose_lock(policy)
+    rendered = render_adapters.render_target(policy, "goose")
+    raw_authorized = lock["decision"].get("active_artifacts")
+    if not isinstance(raw_authorized, list) or any(
+        not isinstance(item, str) for item in raw_authorized
+    ):
+        raise InstallError("Goose compatibility lock has invalid active artifacts")
+    authorized = tuple(PurePosixPath(item) for item in raw_authorized)
+    declared = set(render_adapters.TARGETS["goose"].artifacts)
+    if any(
+        path.is_absolute() or ".." in path.parts or path not in declared
+        for path in authorized
+    ):
+        raise InstallError("Goose compatibility lock authorizes an unsafe artifact")
+    if lock["support_status"] == "supported" and set(authorized) != set(rendered):
+        raise InstallError("supported Goose artifacts differ from renderer output")
+    if lock["support_status"] != "supported" and authorized:
+        raise InstallError("unsupported Goose decision authorizes active artifacts")
+
+    changes: list[PlannedChange] = []
+    current_destinations: set[Path] = set()
+    declared_destinations = {
+        options.destinations.project.joinpath(*path.parts) for path in declared
+    }
+    for relative in authorized:
+        destination = options.destinations.project.joinpath(*relative.parts)
+        current_destinations.add(destination)
+        _safe_path(destination, "Goose adapter destination")
+        observed = _capture_state(destination)
+        entry = _entry_for(manifest, destination)
+        content = rendered[relative]
+        checksum = _digest_bytes(content)
+        if observed.kind != "missing":
+            if entry is None or entry.get("source") != "render:goose":
+                raise CollisionError(
+                    "adapter",
+                    destination,
+                    [{"path": "<redacted-field>", "current": "<unmanaged>", "expected": checksum}],
+                )
+            if observed.kind != "file" or observed.checksum != entry.get("checksum"):
+                raise CollisionError(
+                    "adapter",
+                    destination,
+                    [{"path": "<redacted-field>", "current": "<modified>", "expected": entry.get("checksum", "<redacted>")}],
+                )
+        change = PlannedChange(
+            destination,
+            "adapter",
+            content=content,
+            mode=0o600,
+            source="render:goose",
+            owned={"artifact": checksum},
+            observed=observed,
+        )
+        if entry is not None:
+            change.recorded_checksum = entry["checksum"]
+        changes.append(change)
+
+    for key, raw_entry in sorted(manifest.get("entries", {}).items()):
+        if not isinstance(raw_entry, dict) or raw_entry.get("source") != "render:goose":
+            continue
+        destination = Path(raw_entry["destination"])
+        if destination not in declared_destinations:
+            raise InstallError(
+                "Goose ownership manifest references a non-adapter destination"
+            )
+        if destination not in current_destinations:
+            changes.append(_stale_asset_change(key, raw_entry))
+    return changes
+
+
 def _plan_configs(
     options: InstallOptions, manifest: Mapping[str, Any]
 ) -> list[PlannedChange]:
@@ -831,6 +915,9 @@ def _plan_configs(
     )
     changes: list[PlannedChange] = []
     for target in options.targets:
+        if target == "goose":
+            changes.extend(_plan_goose_configs(options, manifest, policy))
+            continue
         if target not in {"claude_code", "codex"}:
             raise InstallError(f"ordinary installation target is forbidden: {target}")
         for relative, rendered in render_adapters.render_target(policy, target).items():
@@ -1069,12 +1156,21 @@ def _checksum_path(path: Path, expected_link_target: str | None = None) -> str:
     return _digest_bytes(content)
 
 
-def _provenance(changes: Iterable[PlannedChange]) -> str:
+def _provenance(changes: Iterable[PlannedChange], targets: Sequence[str]) -> str:
     material = [
         {"checksum": change.checksum, "kind": change.kind, "source": change.source}
         for change in sorted(changes, key=lambda item: os.fspath(item.destination))
         if not change.delete
     ]
+    if "goose" in targets:
+        for source, label in (
+            (render_adapters.DEFAULT_POLICY, "input:canonical-policy"),
+            (render_adapters.DEFAULT_GOOSE_LOCK, "input:goose-compatibility-lock"),
+        ):
+            content, _ = _read_stable_regular(source)
+            material.append(
+                {"checksum": _digest_bytes(content), "kind": "provenance", "source": label}
+            )
     return _canonical_digest(material)
 
 
@@ -1126,7 +1222,7 @@ def plan_install(options: InstallOptions) -> tuple[list[PlannedChange], str]:
         if change.destination in destinations_seen:
             raise InstallError(f"multiple install artifacts target {change.destination}")
         destinations_seen.add(change.destination)
-    provenance = _provenance(changes)
+    provenance = _provenance(changes, options.targets)
     manifest_change = PlannedChange(
         manifest_path,
         "manifest",
@@ -1322,7 +1418,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-destination", required=True, type=Path)
     parser.add_argument("--skills-destination", required=True, type=Path)
     parser.add_argument("--instructions-destination", required=True, type=Path)
-    parser.add_argument("--target", action="append", choices=("claude_code", "codex"))
+    parser.add_argument(
+        "--target", action="append", choices=("claude_code", "codex", "goose")
+    )
     parser.add_argument("--workspace-trust", choices=TRUST_STATES, default="pending")
     parser.add_argument("--server-approval", choices=TRUST_STATES, default="pending")
     parser.add_argument("--activation", choices=ACTIVATION_STATES, default="inactive")

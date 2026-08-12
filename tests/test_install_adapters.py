@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import install_adapters
+from scripts import install_adapters, render_adapters
 
 
 class InstallAdaptersTests(unittest.TestCase):
@@ -55,6 +55,23 @@ class InstallAdaptersTests(unittest.TestCase):
             "worker\n", encoding="utf-8"
         )
         return canonical
+
+    def supported_goose_lock(self) -> dict[str, object]:
+        lock = json.loads(
+            (install_adapters.ROOT / "adapters" / "goose" / "client-lock.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        lock["support_status"] = "supported"
+        lock["decision"]["active_credential_artifacts_allowed"] = True
+        lock["decision"]["active_artifacts"] = [
+            "goose/recipe.json",
+            "goose/settings.json",
+        ]
+        for gate in lock["required_gates"]:
+            if gate["required"]:
+                gate["status"] = "pass"
+        return lock
 
     def test_repository_project_metadata_is_recovery_identity_only(self) -> None:
         metadata = tomllib.loads(
@@ -153,6 +170,100 @@ class InstallAdaptersTests(unittest.TestCase):
         self.assertFalse(self.destinations.project.exists())
         self.assertFalse(self.destinations.skills.exists())
         self.assertFalse(self.destinations.instructions.exists())
+
+    def test_unsupported_goose_target_is_explicit_inert_and_secret_free(self) -> None:
+        options = self.options(targets=("goose",))
+        dry = install_adapters.install(self.options("dry-run", targets=("goose",)))
+        self.assertEqual("planned", dry.installation)
+        self.assertFalse(self.destinations.project.exists())
+
+        installed = install_adapters.install(options)
+        self.assertEqual("installed", installed.installation)
+        self.assertFalse((self.destinations.project / "goose").exists())
+        self.assertFalse((self.destinations.project / "config.yaml").exists())
+        manifest_path = self.destinations.project / ".zabin" / "installer-manifest.json"
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        self.assertNotIn("render:goose", manifest_text)
+        self.assertNotIn("Authorization", manifest_text)
+        self.assertEqual(
+            "verified",
+            install_adapters.install(self.options("check", targets=("goose",))).installation,
+        )
+
+    def test_supported_goose_uses_isolated_owned_files_and_refuses_modification(self) -> None:
+        supported = self.supported_goose_lock()
+        with mock.patch(
+            "scripts.render_adapters.load_and_validate_goose_lock",
+            return_value=supported,
+        ):
+            installed = install_adapters.install(self.options(targets=("goose",)))
+            checked = install_adapters.install(self.options("check", targets=("goose",)))
+        self.assertEqual("installed", installed.installation)
+        self.assertEqual("verified", checked.installation)
+        recipe = self.destinations.project / "goose" / "recipe.json"
+        settings = self.destinations.project / "goose" / "settings.json"
+        self.assertTrue(recipe.is_file())
+        self.assertTrue(settings.is_file())
+        self.assertFalse((self.destinations.project / "config.yaml").exists())
+        combined = recipe.read_text(encoding="utf-8") + settings.read_text(encoding="utf-8")
+        self.assertIn("${ZABIN_MCP_TOKEN}", combined)
+        self.assertNotIn("conductor-secret-that-must-never-appear", combined)
+
+        recipe.write_text("{}\n", encoding="utf-8")
+        with mock.patch(
+            "scripts.render_adapters.load_and_validate_goose_lock",
+            return_value=supported,
+        ):
+            with self.assertRaisesRegex(install_adapters.CollisionError, "modified"):
+                install_adapters.install(self.options(targets=("goose",)))
+
+    def test_goose_stale_removal_is_backed_up_and_rolls_back_with_manifest(self) -> None:
+        supported = self.supported_goose_lock()
+        with mock.patch(
+            "scripts.render_adapters.load_and_validate_goose_lock",
+            return_value=supported,
+        ):
+            install_adapters.install(self.options(targets=("goose",)))
+        recipe = self.destinations.project / "goose" / "recipe.json"
+        settings = self.destinations.project / "goose" / "settings.json"
+        manifest = self.destinations.project / ".zabin" / "installer-manifest.json"
+        manifest_before = manifest.read_bytes()
+
+        real_replace = os.replace
+
+        def fail_manifest(source: object, destination: object) -> None:
+            if str(source).endswith(".tmp") and Path(destination) == manifest:
+                raise OSError(errno.EIO, "injected Goose manifest failure")
+            real_replace(source, destination)
+
+        with mock.patch("scripts.install_adapters.os.replace", side_effect=fail_manifest):
+            with self.assertRaisesRegex(install_adapters.InstallError, "transaction failed"):
+                install_adapters.install(self.options(targets=("goose",)))
+        self.assertTrue(recipe.is_file())
+        self.assertTrue(settings.is_file())
+        self.assertEqual(manifest_before, manifest.read_bytes())
+
+        removed = install_adapters.install(self.options(targets=("goose",)))
+        self.assertFalse(recipe.exists())
+        self.assertFalse(settings.exists())
+        self.assertTrue(removed.backups)
+        self.assertTrue(
+            all(Path(path).parent == recipe.parent for path in removed.backups if "recipe" in path or "settings" in path)
+        )
+        self.assertNotIn("render:goose", manifest.read_text(encoding="utf-8"))
+
+    def test_goose_lock_input_drift_changes_provenance_without_active_output(self) -> None:
+        options = self.options(targets=("goose",))
+        installed = install_adapters.install(options)
+        original_lock = render_adapters.DEFAULT_GOOSE_LOCK
+        changed_lock = self.root / "changed-goose-lock.json"
+        payload = json.loads(original_lock.read_text(encoding="utf-8"))
+        payload["decision"]["reason"] += " drift canary"
+        changed_lock.write_text(json.dumps(payload), encoding="utf-8")
+        with mock.patch.object(render_adapters, "DEFAULT_GOOSE_LOCK", changed_lock):
+            checked = install_adapters.install(self.options("check", targets=("goose",)))
+        self.assertEqual("drift", checked.installation)
+        self.assertNotEqual(installed.provenance, checked.provenance)
 
     def test_installer_owned_update_is_allowed_but_user_modification_fails(self) -> None:
         install_adapters.install(self.options())

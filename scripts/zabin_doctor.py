@@ -12,7 +12,10 @@ import argparse
 import hashlib
 import json
 import os
+import stat
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -303,6 +306,78 @@ def validate_static_contracts(
     checks.append(
         _check("adapter_readiness", "pass", "all declared adapters render in memory", artifacts=rendered)
     )
+    goose_lock = render_adapters.load_and_validate_goose_lock(policy)
+    goose_client = goose_lock.get("client", {})
+    goose_gates = goose_lock.get("required_gates", [])
+    blocking_gate_ids = [
+        str(gate["id"])
+        for gate in goose_gates
+        if isinstance(gate, Mapping)
+        and gate.get("required") is True
+        and gate.get("status") != "pass"
+    ]
+    support_status = str(goose_lock["support_status"])
+    client_version = goose_client.get("version")
+    release_commit = goose_client.get("release_commit")
+    if not isinstance(client_version, str) or not client_version:
+        raise DoctorError("Goose compatibility lock has no pinned client version")
+    if not isinstance(release_commit, str) or len(release_commit) != 40:
+        raise DoctorError("Goose compatibility lock has no pinned release commit")
+    artifact_evidence = goose_lock.get("artifact_evidence")
+    local_observation = (
+        artifact_evidence.get("local_observation")
+        if isinstance(artifact_evidence, Mapping)
+        else None
+    )
+    local_digest = (
+        local_observation.get("sha256")
+        if isinstance(local_observation, Mapping)
+        else None
+    )
+    if (
+        not isinstance(local_digest, str)
+        or len(local_digest) != 64
+        or any(character not in "0123456789abcdef" for character in local_digest)
+        or local_observation.get("version_output") != client_version
+    ):
+        raise DoctorError("Goose compatibility lock has invalid local binary evidence")
+    source_evidence = goose_lock.get("source_evidence")
+    if not isinstance(source_evidence, list) or not source_evidence:
+        raise DoctorError("Goose compatibility lock has no source evidence")
+    if any(
+        not isinstance(item, Mapping)
+        or item.get("commit") != release_commit
+        or not isinstance(item.get("sha256"), str)
+        or len(item["sha256"]) != 64
+        for item in source_evidence
+    ):
+        raise DoctorError("Goose source evidence differs from the pinned release")
+    checks.append(
+        _check(
+            "goose_compatibility",
+            "pass",
+            (
+                f"Goose {client_version} is {support_status}; "
+                + (
+                    "active artifacts are disabled; blocking gates: "
+                    + ", ".join(blocking_gate_ids)
+                    if support_status == "unsupported"
+                    else "the compatibility lock authorizes isolated artifacts"
+                )
+            ),
+            support_status=support_status,
+            client_version=client_version,
+            release_commit=release_commit,
+            active_artifacts=list(goose_lock["decision"]["active_artifacts"]),
+            blocking_gate_ids=blocking_gate_ids,
+            operator_action=(
+                "Keep the Goose installer target inert and use --live --goose-binary "
+                "with an explicit absolute path for a pinned-binary drift check."
+                if support_status == "unsupported"
+                else "Verify the pinned native client before activation."
+            ),
+        )
+    )
     checks.append(
         _check(
             "canonical_surface_fingerprints",
@@ -320,6 +395,86 @@ def validate_static_contracts(
         )
     )
     return policy, checks
+
+
+def diagnose_goose_binary(path: Path, policy: Mapping[str, Any]) -> JsonObject:
+    """Compare one explicitly selected native binary with the local audit pin."""
+
+    if not path.is_absolute():
+        return _check(
+            "goose_native_binary", "fail", "Goose binary path must be absolute"
+        )
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        return _check(
+            "goose_native_binary",
+            "fail",
+            f"cannot inspect Goose binary: {type(error).__name__}",
+        )
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        return _check(
+            "goose_native_binary",
+            "fail",
+            "Goose binary must be a non-symlink regular file",
+        )
+
+    lock = render_adapters.load_and_validate_goose_lock(dict(policy))
+    expected_version = lock["client"]["version"]
+    expected_sha256 = lock["artifact_evidence"]["local_observation"]["sha256"]
+    try:
+        before = hashlib.sha256(path.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory(prefix="zabin-goose-doctor-") as temporary:
+            result = subprocess.run(
+                [os.fspath(path), "--version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env={"GOOSE_PATH_ROOT": temporary, "PATH": os.defpath},
+            )
+        after = hashlib.sha256(path.read_bytes()).hexdigest()
+    except (OSError, subprocess.SubprocessError) as error:
+        return _check(
+            "goose_native_binary",
+            "fail",
+            f"cannot execute Goose version probe: {type(error).__name__}",
+        )
+    version = result.stdout.strip()
+    if before != after:
+        return _check(
+            "goose_native_binary", "fail", "Goose binary changed during inspection"
+        )
+    if result.returncode != 0 or version != expected_version or before != expected_sha256:
+        return _check(
+            "goose_native_binary",
+            "fail",
+            "Goose binary differs from the pinned local audit observation",
+            expected_version=expected_version,
+            observed_version=version or "<empty>",
+            version_matches=version == expected_version,
+            digest_matches=before == expected_sha256,
+            support_status=lock["support_status"],
+        )
+    official_verified = lock["artifact_evidence"].get("official_artifact_verified") is True
+    supported = lock["support_status"] == "supported"
+    status = "pass" if official_verified and supported else "degraded"
+    return _check(
+        "goose_native_binary",
+        status,
+        (
+            "Goose binary matches the pinned local audit observation; "
+            "official artifact integrity remains unverified and support remains disabled"
+            if status == "degraded"
+            else "Goose binary matches the supported official artifact pin"
+        ),
+        expected_version=expected_version,
+        observed_version=version,
+        version_matches=True,
+        digest_matches=True,
+        official_artifact_verified=official_verified,
+        support_status=lock["support_status"],
+    )
 
 
 def discover_credentials(
@@ -598,6 +753,7 @@ def run_doctor(
     urls: Mapping[str, str] | None = None,
     timeout: float = 10.0,
     transport: Transport = _default_transport,
+    goose_binary: Path | None = None,
 ) -> JsonObject:
     environment = os.environ if environ is None else environ
     files = token_files or {
@@ -608,6 +764,8 @@ def run_doctor(
         policy, checks = validate_static_contracts(policy_path, policy_schema_path)
         credentials = discover_credentials(policy, environment, files, read_tokens=live)
         if live:
+            if goose_binary is not None:
+                checks.append(diagnose_goose_binary(goose_binary, policy))
             selected_urls = urls or {
                 server["surface"]: server["transport"]["url"] for server in policy["servers"]
             }
@@ -667,14 +825,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--policy-schema", type=Path, default=DEFAULT_POLICY_SCHEMA)
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument(
+        "--goose-binary",
+        type=Path,
+        help="absolute pinned Goose executable to inspect during --live diagnostics",
+    )
     parser.add_argument("--json", action="store_true", help="emit the machine-readable report")
     return parser
 
 
 def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if not args.live and (args.live_url or args.conductor_url or args.worker_url):
-        build_parser().error("URL overrides require --live")
+    if not args.live and (
+        args.live_url or args.conductor_url or args.worker_url or args.goose_binary
+    ):
+        build_parser().error("URL overrides and --goose-binary require --live")
     urls: dict[str, str] | None = None
     if args.live:
         try:
@@ -701,6 +866,7 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
         },
         urls=urls,
         timeout=args.timeout,
+        goose_binary=args.goose_binary,
     )
     if args.json:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
