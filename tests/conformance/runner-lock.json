@@ -1,6 +1,13 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "requirements_revision": "2025-11-25",
+  "orchestration": {
+    "runner": "zabin-agent-tooling",
+    "retired_runtimes": [
+      "python"
+    ],
+    "retirement_reason": "Conformance orchestration moved from .agents/scripts/run_conformance.py into `zabctl agents conformance`. No interpreter is executed to run a pass, so pinning an orchestration interpreter version would assert something no longer true. Every genuine pin — the Node runtime the official conformance artifact runs under, the client versions and digests, the artifact and transitive-artifact integrity, the surface identities, and the lifecycle gates — is preserved below."
+  },
   "official_conformance": {
     "repository": "https://github.com/modelcontextprotocol/conformance",
     "action_version": "v0.1.11",
@@ -43,17 +50,13 @@
     ]
   },
   "runtimes": {
-    "python": {
-      "required": true,
-      "executable": "python3",
-      "version_arguments": ["--version"],
-      "expected_output": "Python 3.14.6"
-    },
     "node": {
       "required": true,
       "executable": "node",
       "expected_path": "/usr/bin/node",
-      "version_arguments": ["--version"],
+      "version_arguments": [
+        "--version"
+      ],
       "expected_output": "v20.19.5"
     }
   },
@@ -61,7 +64,9 @@
     "claude_code": {
       "supported": true,
       "executable": "claude",
-      "version_arguments": ["--version"],
+      "version_arguments": [
+        "--version"
+      ],
       "expected_output": "2.1.220 (Claude Code)",
       "noninteractive_command": [
         "claude",
@@ -85,7 +90,9 @@
     "codex": {
       "supported": true,
       "executable": "codex",
-      "version_arguments": ["--version"],
+      "version_arguments": [
+        "--version"
+      ],
       "expected_output": "codex-cli 0.147.0",
       "noninteractive_command": [
         "codex",
@@ -108,7 +115,9 @@
       "reason": "Goose 1.45.0 remains fail-closed because the pinned compatibility audit has unresolved credential, identity, approval, trust, sandbox, artifact, and cleanup gates.",
       "executable": "goose",
       "binary_environment": "GOOSE_NATIVE_BINARY",
-      "version_arguments": ["--version"],
+      "version_arguments": [
+        "--version"
+      ],
       "expected_output": "1.45.0",
       "compatibility_lock": "adapters/goose/client-lock.json",
       "compatibility_lock_sha256": "sha256:748eac1ac94347bf6d77df41371e0e9538b897d1dc721e08b945513ae3646e7f",
@@ -175,5 +184,15 @@
     ],
     "minimum_worker_lease_seconds": 1800,
     "production_project_allowlist_environment": "ZABIN_CONFORMANCE_PROJECT_ALLOWLIST"
+  },
+  "evidence": {
+    "schema_version": "1.0.0",
+    "goose_report_format": "zabin-conformance/goose-external-report-v1",
+    "host_report_environments": {
+      "claude_code": "ZABIN_CONFORMANCE_CLAUDE_CODE_REPORT",
+      "codex": "ZABIN_CONFORMANCE_CODEX_REPORT",
+      "goose": "ZABIN_CONFORMANCE_GOOSE_REPORT"
+    },
+    "lifecycle_evidence_environment": "ZABIN_CONFORMANCE_LIFECYCLE_EVIDENCE"
   }
 }
