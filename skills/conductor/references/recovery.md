@@ -2,7 +2,7 @@
 
 Zabin is authoritative. The Phase 1 checkpoint is a minimal, redacted snapshot for state that the live read model cannot reconstruct; it is not a task ledger, plan document, review ledger, or source of ambient project identity.
 
-The executable contract is [recovery-checkpoint.schema.json](../../../schemas/recovery-checkpoint.schema.json), implemented by [recovery_checkpoint.py](../../../scripts/recovery_checkpoint.py).
+The executable contract is [recovery-checkpoint.schema.json](../../../schemas/recovery-checkpoint.schema.json), implemented by the `zabctl agents recovery` command.
 
 ## Recovery order
 
@@ -10,7 +10,7 @@ The executable contract is [recovery-checkpoint.schema.json](../../../schemas/re
 2. Read Zabin first: `get_pickup_context`, `get_pipeline_state`, paged `list_tasks`, paged `list_workspaces`, relevant `get_plan` pages, and `get_task` for active cards.
 3. Inspect git with host read capabilities: primary branch/SHA/status, worktree list, branch heads, and commit ancestry. Do not mutate yet.
 4. Construct the complete checkpoint key from known ids and SHA.
-5. Load and validate the local checkpoint through the versioned recovery module.
+5. Load and validate the local checkpoint with `zabctl agents recovery --operation load` and `--operation validate`.
 6. Reconcile the authoritative Zabin projection with the checkpoint without writing either side.
 7. Resume only after identity, lifecycle status, lease owner, phase/wave bases, verdicts, gates, action items, summaries, and commit mappings are consistent or their absence is explicitly understood.
 
@@ -62,7 +62,7 @@ The current schema is `1.0.0` and requires every top-level field below:
 }
 ```
 
-Use the module's `build_checkpoint`, snapshot encoder, validator, redaction, atomic store, and reconciliation functions. Do not hand-roll a looser JSON file.
+Use `zabctl agents recovery` to work with checkpoints — `--operation build` to construct one from an explicit input payload, `validate` to check a document, `save` to store it atomically, `load`/`show` to read a stored one, `migrate` to upgrade an older schema version, and `reconcile` to compare against authoritative Zabin state. Do not hand-roll a looser JSON file.
 
 Checkpoint content is limited to:
 

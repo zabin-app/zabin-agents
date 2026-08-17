@@ -3,10 +3,9 @@
 ## Prerequisites
 
 - A local clone of this repository.
-- Python 3.11 or newer for rendering, installation, diagnostics, recovery support, and the dependency-free unit suite.
-- No Python package installation is required for ordinary development.
+- A built `zabctl` binary. Rendering, installation, diagnostics, recovery, and conformance are the `zabctl agents` command family, implemented in the zabin repository's `zabin-agent-tooling` crate; build it with `cargo build --release -p zabin-cli` in the zabin workspace, or use an installed `zabctl`.
 - Native clients are needed only to install or observe their adapters. Goose 1.45.0 is an optional pinned observation target and remains unsupported.
-- Full locked conformance additionally requires the exact Python, Node, client, official runner, transitive lock, and artifact versions recorded in `tests/conformance/runner-lock.json`. The runner downloads nothing.
+- Full locked conformance additionally requires the exact Node, client, official runner, transitive lock, and artifact versions recorded in `tests/conformance/runner-lock.json`. The runner downloads nothing.
 
 Run commands from the repository root. Use a disposable directory for examples and replace every `/absolute/...` placeholder with an explicit path you control.
 
@@ -21,15 +20,15 @@ read -rsp 'Worker token: ' ZABIN_MCP_WORKER_TOKEN
 export ZABIN_MCP_WORKER_TOKEN
 ```
 
-Do not place literal values in repository files or generated adapters. Claude configuration interpolates the environment variables; Codex configuration stores their names for runtime lookup. The unsupported Goose target must not consume or persist either value. Live diagnostics may instead read explicit token files:
+Do not place literal values in repository files or generated adapters. Claude configuration interpolates the environment variables; Codex configuration stores their names for runtime lookup. The unsupported Goose target must not consume or persist either value. Live diagnostics may instead read explicit token files, named per surface by their file-path environment variables:
 
 ```bash
-python scripts/zabin_doctor.py --live \
-  --conductor-token-file /absolute/restricted/mcp.token \
-  --worker-token-file /absolute/restricted/mcp-worker.token
+ZABIN_MCP_TOKEN_FILE=/absolute/restricted/mcp.token \
+ZABIN_MCP_WORKER_TOKEN_FILE=/absolute/restricted/mcp-worker.token \
+  zabctl agents doctor --mode live --contracts-root "$PWD"
 ```
 
-Restrict token files to the current user. Static diagnostics do not read environment values or token files.
+Each surface's credential resolves from its raw-token environment variable first, then from the token file above, else from `$HOME/.zabin/mcp.token` / `$HOME/.zabin/mcp-worker.token`. Restrict token files to the current user. Static diagnostics do not read environment values or token files.
 
 Recovery checkpoints default to `.runtime/checkpoints` under the repository root. To keep them elsewhere, set an explicit state directory:
 
@@ -37,257 +36,211 @@ Recovery checkpoints default to `.runtime/checkpoints` under the repository root
 export ZABIN_RECOVERY_STATE_DIR=/absolute/restricted/checkpoints
 ```
 
-## Dependency-Free Tests
+## Tests
 
-Run the complete default suite:
-
-```bash
-python -m unittest discover -s tests -p 'test_*.py'
-```
-
-Run focused contract and subsystem suites:
+The `zabctl agents` behavior is covered by the `zabin-agent-tooling` crate's
+integration tests in the zabin workspace. Run the complete suite:
 
 ```bash
-python -m unittest tests.test_contract_schemas
-python -m unittest tests.test_render_adapters
-python -m unittest tests.test_install_adapters
-python -m unittest tests.test_goose_compatibility
-python -m unittest tests.test_recovery_checkpoint
-python -m unittest tests.test_zabin_doctor
-python -m unittest discover -s tests/conformance -p 'test_*.py'
+cargo test -p zabin-agent-tooling
 ```
 
-These tests use standard-library fixtures and mocks and do not require live Zabin endpoints.
+The focused contract and subsystem suites are the per-command test files under
+`src/zabin-agent-tooling/tests/`: `contracts.rs`, `render.rs`, `install.rs`,
+`doctor.rs`, `recovery.rs`, `conformance.rs`, `cutover.rs`, and `foundation.rs`.
+Run one with `cargo test -p zabin-agent-tooling --test <name>` (for example
+`--test render`).
+
+These tests use in-tree fixtures and temporary directories and do not require live Zabin endpoints.
 
 ## Generate Client Adapters
 
-Rendering requires an explicit target, output directory, and both credential environment variables. It validates policy and schema, renders in memory, and writes deterministic artifacts atomically; missing, empty, or literal placeholder credentials fail before output.
+Rendering requires an explicit target, output directory, and both credential environment variables. It validates policy and schema, renders in memory, and writes deterministic artifacts atomically; missing, empty, or literal placeholder credentials fail before output. `--mode` selects `dry-run`, `write` (the default), or `check`; the supported targets are `claude_code`, `codex`, and `goose`.
 
 Preview without writing:
 
 ```bash
-python scripts/render_adapters.py \
+zabctl agents render \
   --target claude_code \
   --output-dir /absolute/staging/claude \
-  --dry-run
+  --mode dry-run
 
-python scripts/render_adapters.py \
+zabctl agents render \
   --target codex \
   --output-dir /absolute/staging/codex \
-  --dry-run
+  --mode dry-run
 ```
 
-Write artifacts, then verify that the destination has no drift:
+Write artifacts, then verify that the destination has no drift (`check` exits 1 on drift):
 
 ```bash
-python scripts/render_adapters.py \
-  --target claude_code \
-  --output-dir /absolute/staging/claude
-python scripts/render_adapters.py \
+zabctl agents render \
   --target claude_code \
   --output-dir /absolute/staging/claude \
-  --check
+  --mode write
+zabctl agents render \
+  --target claude_code \
+  --output-dir /absolute/staging/claude \
+  --mode check
 
-python scripts/render_adapters.py \
-  --target codex \
-  --output-dir /absolute/staging/codex
-python scripts/render_adapters.py \
+zabctl agents render \
   --target codex \
   --output-dir /absolute/staging/codex \
-  --check
+  --mode write
+zabctl agents render \
+  --target codex \
+  --output-dir /absolute/staging/codex \
+  --mode check
 ```
 
-Codex `requirements.toml` is a separate administrator-owned enforcement artifact. Ordinary generation and installation never deploy it:
-
-```bash
-python scripts/render_adapters.py \
-  --target codex_admin_requirements \
-  --output-dir /absolute/admin-staging \
-  --admin-deployment
-```
-
-An administrator must deploy that staged file through the supported system policy workflow and verify the effective client policy.
+Codex `requirements.toml` is a separate administrator-owned enforcement artifact. Ordinary generation and installation never deploy it. In this build the `codex_admin_requirements` render target is **library-only**: it requires explicit administrator-deployment authorization that the `render` command does not expose (there is no `--admin-deployment` flag), so the CLI refuses to render it. An administrator must deploy that artifact through the supported system policy workflow and verify the effective client policy.
 
 ### Audit the inert Goose target
 
 Goose 1.45.0 is lock-gated and unsupported. These commands require no credential values and render or compare only inert status artifacts:
 
 ```bash
-python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose --dry-run
-python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose
-python scripts/render_adapters.py --target goose --output-dir /absolute/staging/goose --check
+zabctl agents render --target goose --output-dir /absolute/staging/goose --mode dry-run
+zabctl agents render --target goose --output-dir /absolute/staging/goose --mode write
+zabctl agents render --target goose --output-dir /absolute/staging/goose --mode check
 ```
 
 Do not convert the output into an active recipe or settings file. The audited gates and re-evaluation boundary live in [`adapters/goose/COMPATIBILITY.md`](../adapters/goose/COMPATIBILITY.md).
 
 ## Install and Check Portable Assets
 
-The installer has no implicit home-directory destination. Always provide the project, skills, and role-instruction destinations. Begin with a dry run:
+The installer has no implicit home-directory destination. Always provide an explicit, absolute destination. Begin with a dry run:
 
 ```bash
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode dry-run \
-  --project-destination /absolute/project \
-  --skills-destination /absolute/client/skills \
-  --instructions-destination /absolute/client/agents \
-  --target claude_code \
-  --target codex
+  --destination /absolute/destination
 ```
 
-Install copies only after reviewing the plan and obtaining client workspace trust and server approval separately:
+Install copies only after reviewing the plan. Obtaining client workspace trust and server approval remain separate states that installation never grants:
 
 ```bash
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode copy \
-  --project-destination /absolute/project \
-  --skills-destination /absolute/client/skills \
-  --instructions-destination /absolute/client/agents \
-  --target claude_code \
-  --target codex \
-  --workspace-trust approved \
-  --server-approval approved \
-  --activation active
+  --destination /absolute/destination
 ```
 
 Verify the installed state without changing it:
 
 ```bash
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode check \
-  --project-destination /absolute/project \
-  --skills-destination /absolute/client/skills \
-  --instructions-destination /absolute/client/agents \
-  --target claude_code \
-  --target codex \
-  --workspace-trust approved \
-  --server-approval approved \
-  --activation active
+  --destination /absolute/destination
 ```
 
-Check mode exits `1` for drift and `2` for an unsafe or invalid installation. Symlink mode is available for locally trusted development destinations; copy mode is the safer default for independent installations.
+The installer writes the portable role instructions under `<destination>/agents` and the Agent Skills under `<destination>/.agents/skills`, tracking ownership in `<destination>/.zabin/installer-manifest.json`; it reports an `activation` state that stays `inactive` until a client grants it, and never marks itself active. Check mode exits `1` for drift and `2` for an unsafe or invalid installation. `--mode symlink` is available for locally trusted development destinations; `copy` is the safer default for independent installations.
 
-The unsupported Goose installer target can be audited without creating active Goose configuration. It still plans the shared portable roles, skills, and ownership manifest:
+The unsupported Goose path creates no active Goose configuration. The installer has no per-client target; it plans only the shared portable roles and skills and reports activation `inactive`:
 
 ```bash
-python scripts/install_adapters.py --mode dry-run --project-destination /absolute/project \
-  --skills-destination /absolute/client/skills --instructions-destination /absolute/client/agents --target goose
-python scripts/install_adapters.py --mode check --project-destination /absolute/project \
-  --skills-destination /absolute/client/skills --instructions-destination /absolute/client/agents --target goose
+zabctl agents install --mode dry-run --destination /absolute/destination
+zabctl agents install --mode check --destination /absolute/destination
 ```
 
-An unsupported Goose target must report inactive and must not own `goose/recipe.json` or `goose/settings.json`.
+An unsupported Goose target must report inactive and must not own `goose/recipe.json` or `goose/settings.json`; those artifacts are produced only by `zabctl agents render --target goose` as inert evidence.
 
 ## Static Diagnostics
 
-Static doctor validates schemas, role and tier contracts, policy, templates, rendered adapter semantics, conditional client support states, and recovery contracts without network access or credential reads:
+Static doctor (`--mode static`, the default) validates schemas, role and tier contracts, policy, templates, rendered adapter semantics, conditional client support states, and recovery contracts without network access or credential reads. The human summary prints to stdout; `--report-path` additionally writes the JSON report (mode `0600`):
 
 ```bash
-python scripts/zabin_doctor.py
-python scripts/zabin_doctor.py --json
+zabctl agents doctor
+zabctl agents doctor --report-path /absolute/restricted/doctor-report.json
 ```
 
-A failing check exits nonzero. A degraded live result remains distinguishable from a full failure.
+A failing check exits nonzero. Static doctor against this repository's own bundle reports overall `DEGRADED`, which is exit **0** — a diagnostic finding, distinguishable from a full failure.
 
-Static doctor reports Goose's unsupported status and blocking gate identifiers as a passing diagnosis, not as client support. To compare an explicitly selected executable with the pinned local observation, use an absolute non-symlink path:
-
-```bash
-python scripts/zabin_doctor.py --live --goose-binary /absolute/path/to/goose --json
-```
-
-The probe runs the executable with an isolated temporary `GOOSE_PATH_ROOT`; it does not activate the adapter or upgrade the support decision. Because `--live` also enables the read-only surface probes described below, both endpoints and credentials must be available.
+Static doctor reports Goose's unsupported status and blocking gate identifiers as a diagnosis, not as client support: the `goose_compatibility` check reports `DEGRADED` and keeps the overall run at exit 0. Comparing an explicitly selected Goose executable against the pinned observation is a conformance concern — use `zabctl agents conformance --mode live` with `GOOSE_NATIVE_BINARY` / `GOOSE_PATH_ROOT` (see Conformance below); it runs the executable under an isolated temporary `GOOSE_PATH_ROOT`, does not activate the adapter, and cannot upgrade the support decision.
 
 ## Opt-in Live Diagnostics
 
-With both canonical endpoints running and credentials available, probe the exact conductor and worker surfaces:
+With both canonical endpoints running and credentials available, probe the exact conductor and worker surfaces. `--mode live` reads real credentials, so it **refuses a discovered contracts root** — name the bundle explicitly with `--contracts-root`:
 
 ```bash
-python scripts/zabin_doctor.py --live --json
+zabctl agents doctor --mode live --contracts-root "$PWD"
 ```
 
-The canonical endpoints are `127.0.0.1:50052/mcp` for conductor and `127.0.0.1:50053/mcp-worker` for worker. Port `50051` is the Zabin gRPC listener, not a Streamable HTTP MCP endpoint. Use URL overrides only for an explicitly configured Streamable HTTP gateway:
-
-```bash
-python scripts/zabin_doctor.py --live \
-  --conductor-url http://127.0.0.1:61052/mcp \
-  --worker-url http://127.0.0.1:61053/mcp-worker
-```
+The canonical endpoints are `127.0.0.1:50052/mcp` for conductor and `127.0.0.1:50053/mcp-worker` for worker. Port `50051` is the Zabin gRPC listener, not a Streamable HTTP MCP endpoint. This build probes those canonical loopback surfaces directly; there is no CLI URL override.
 
 Live diagnostics are read-only. They verify identity and inventory, credential separation, and authorization boundaries while reporting credential availability rather than values.
 
 ## Conformance
 
-The local conformance runner is fail closed and normally exits nonzero until all required native-host and lifecycle evidence is supplied:
+The conformance runner is fail closed. Static mode (`--mode static`, the default) checks the runner lock, policy parity, artifact integrity, and prior report evidence offline; against the shipped lock it is an **expected non-pass** (exit 2), naming every unmet requirement rather than assuming it:
 
 ```bash
-python scripts/run_conformance.py
+zabctl agents conformance
 ```
 
-Its default redacted mode-0600 report is written beneath `/tmp/codex-artifacts/<checkout-name>/conformance/`; choose another output explicitly when needed:
+Write the redacted report (mode `0600`) with `--report-path`:
 
 ```bash
-python scripts/run_conformance.py --output /absolute/restricted/conformance.json
+zabctl agents conformance --report-path /absolute/restricted/conformance.json
 ```
 
-Run the opt-in read-only live unit probe:
-
-```bash
-ZABIN_RUN_LIVE_CONFORMANCE=1 \
-  python -m unittest discover -s tests/conformance -p 'test_live_mcp.py'
-```
-
-For a full live run, provision the exact already-downloaded official artifact set from the lock and export only its paths:
+Evidence for what can be satisfied offline is supplied through the environment variables the lock itself names, not CLI flags — the official artifact set, the per-host reports, and the lifecycle evidence:
 
 ```bash
 export ZABIN_CONFORMANCE_ARTIFACT=/absolute/verified/conformance/dist/index.js
 export ZABIN_CONFORMANCE_TRANSITIVE_LOCK=/absolute/verified/package-lock.json
 export ZABIN_CONFORMANCE_TRANSITIVE_ARTIFACT_MANIFEST=/absolute/verified/artifacts.json
+export ZABIN_CONFORMANCE_CLAUDE_CODE_REPORT=/absolute/restricted/claude-report.json
+export ZABIN_CONFORMANCE_CODEX_REPORT=/absolute/restricted/codex-report.json
+export ZABIN_CONFORMANCE_GOOSE_REPORT=/absolute/restricted/goose-report.json
+export ZABIN_CONFORMANCE_LIFECYCLE_EVIDENCE=/absolute/restricted/disposable-lifecycle.json
+```
 
-python scripts/run_conformance.py --live \
-  --host-report claude_code=/absolute/restricted/claude-report.json \
-  --host-report codex=/absolute/restricted/codex-report.json \
-  --host-report goose=/absolute/restricted/goose-report.json \
-  --lifecycle-evidence /absolute/restricted/disposable-lifecycle.json
+For a full live run, add `--mode live`, which launches the pinned clients under isolated roots and therefore **refuses a discovered contracts root** — name it with `--contracts-root`. Goose observation additionally reads `GOOSE_NATIVE_BINARY` and `GOOSE_PATH_ROOT`:
+
+```bash
+GOOSE_NATIVE_BINARY=/absolute/path/to/goose \
+  zabctl agents conformance --mode live --contracts-root "$PWD" \
+    --report-path /absolute/restricted/conformance.json
 ```
 
 The Goose report must describe an explicit pinned binary, an isolated disposable `GOOSE_PATH_ROOT`, loopback observations, redacted in-memory streams, and complete fixture cleanup. With the committed Goose 1.45.0 lock, its required support gate fails even when all observational fields are valid, so the aggregate conformance result is intentionally non-pass. Report shape and fixture requirements live in [`tests/conformance/README.md`](../tests/conformance/README.md).
 
-Lifecycle evidence must describe a disposable project. Observing a reviewed non-disposable project requires both deliberate evidence and an exact allowlist:
+Lifecycle evidence must describe a disposable project. Observing a reviewed non-disposable project requires both deliberate evidence and an exact allowlist, supplied through `ZABIN_CONFORMANCE_LIFECYCLE_EVIDENCE` and `ZABIN_CONFORMANCE_PROJECT_ALLOWLIST`:
 
 ```bash
-python scripts/run_conformance.py \
-  --lifecycle-evidence /absolute/restricted/approved-production-observation.json \
-  --allow-project prj_exactly_reviewed
+ZABIN_CONFORMANCE_LIFECYCLE_EVIDENCE=/absolute/restricted/approved-production-observation.json \
+ZABIN_CONFORMANCE_PROJECT_ALLOWLIST=prj_exactly_reviewed \
+  zabctl agents conformance --mode live --contracts-root "$PWD"
 ```
 
-Never add expected-failure flags, substitute another runner lock, or point a live lifecycle test at production merely to make the aggregate pass.
+Never substitute another runner lock or point a live lifecycle test at production merely to make the aggregate pass.
 
 ## Release Gate
 
-Before releasing contract or adapter changes, run the dependency-free suite, static diagnostics, deterministic render checks for supported clients, and the static conformance runner with the required observer/lifecycle evidence for the intended claim:
+Before releasing contract or adapter changes, run the crate test suite, static diagnostics, deterministic render checks for supported clients, and the static conformance runner with the required observer/lifecycle evidence for the intended claim:
 
 ```bash
-python -m unittest discover -s tests -p 'test_*.py'
-python scripts/zabin_doctor.py --json
-python scripts/render_adapters.py --target claude_code --output-dir /absolute/release/claude
-python scripts/render_adapters.py --target claude_code --output-dir /absolute/release/claude --check
-python scripts/render_adapters.py --target codex --output-dir /absolute/release/codex
-python scripts/render_adapters.py --target codex --output-dir /absolute/release/codex --check
-python scripts/render_adapters.py --target goose --output-dir /absolute/release/goose
-python scripts/render_adapters.py --target goose --output-dir /absolute/release/goose --check
-python scripts/run_conformance.py \
-  --host-report claude_code=/absolute/restricted/claude-report.json \
-  --host-report codex=/absolute/restricted/codex-report.json \
-  --lifecycle-evidence /absolute/restricted/disposable-lifecycle.json \
-  --output /absolute/restricted/release-conformance.json
+cargo test -p zabin-agent-tooling
+zabctl agents doctor
+zabctl agents render --target claude_code --output-dir /absolute/release/claude --mode write
+zabctl agents render --target claude_code --output-dir /absolute/release/claude --mode check
+zabctl agents render --target codex --output-dir /absolute/release/codex --mode write
+zabctl agents render --target codex --output-dir /absolute/release/codex --mode check
+zabctl agents render --target goose --output-dir /absolute/release/goose --mode write
+zabctl agents render --target goose --output-dir /absolute/release/goose --mode check
+ZABIN_CONFORMANCE_CLAUDE_CODE_REPORT=/absolute/restricted/claude-report.json \
+ZABIN_CONFORMANCE_CODEX_REPORT=/absolute/restricted/codex-report.json \
+ZABIN_CONFORMANCE_LIFECYCLE_EVIDENCE=/absolute/restricted/disposable-lifecycle.json \
+  zabctl agents conformance --report-path /absolute/restricted/release-conformance.json
 ```
 
-Use `--live` only when claiming live protocol conformance and all locked prerequisites are present. Release evidence must not contain skipped, stale, unscored, expected-failure, identity, authorization, redaction, or cleanup gaps.
+Use `--mode live` only when claiming live protocol conformance and all locked prerequisites are present. Release evidence must not contain skipped, stale, unscored, expected-failure, identity, authorization, redaction, or cleanup gaps.
 
 ## Troubleshooting
 
 ### Renderer rejects policy or templates
 
-Run static doctor and the focused contract/render tests. Fix canonical policy, its schema, or the selected template rather than hand-editing generated output. Empty allowlists, unknown tools, duplicate entries, identity mismatch, and unexpressive targets fail closed by design.
+Run `zabctl agents doctor` and the crate's focused contract/render tests (`cargo test -p zabin-agent-tooling --test contracts`, `--test render`). Fix canonical policy, its schema, or the selected template rather than hand-editing generated output. Empty allowlists, unknown tools, duplicate entries, identity mismatch, and unexpressive targets fail closed by design.
 
 ### Check mode reports drift
 

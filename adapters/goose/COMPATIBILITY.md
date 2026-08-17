@@ -101,7 +101,7 @@ any later activation decision.
 
 ## Executable gate
 
-`tests/test_goose_compatibility.py` closes the decision format and checks:
+The `zabin-agent-tooling` crate's Goose audit tests close the decision format and check:
 
 - exact release/source revision, blob digests, and optional native-binary hash;
 - current canonical 52-tool conductor and 17-tool worker fingerprints;
@@ -118,20 +118,28 @@ any later activation decision.
   hook-enforcement, active cleanup, and artifact-integrity gates prevent support;
 - the absence of active Goose settings and recipe templates.
 
-Run the repository-only gate with:
+Run the repository-only gate — offline, no binary — with the crate's Goose audit tests:
 
 ```sh
-python -m unittest tests.test_goose_compatibility
+cargo test -p zabin-agent-tooling
 ```
 
+`zabctl agents doctor` additionally reports the `goose_compatibility` check as
+`DEGRADED` (exit 0), and `zabctl agents render --target goose --output-dir
+/absolute/disposable/goose-render` proves the inert, credential-free status
+output.
+
 To additionally run the bounded native regressions, provide the executable path
-explicitly. Both MCP and OpenAI-compatible endpoints are in-process loopback
-fixtures; each run uses a temporary `GOOSE_PATH_ROOT`, has a process timeout,
-and neither reads nor mutates production Goose state:
+explicitly through `zabctl agents conformance --mode live`, which observes the
+pinned Goose binary under an isolated `GOOSE_PATH_ROOT`. Live mode refuses a
+discovered contracts root, so name it explicitly. Both MCP and OpenAI-compatible
+endpoints are in-process loopback fixtures; each run uses a temporary
+`GOOSE_PATH_ROOT`, has a process timeout, and neither reads nor mutates
+production Goose state:
 
 ```sh
 GOOSE_NATIVE_BINARY=/absolute/path/to/goose \
-  python -m unittest tests.test_goose_compatibility
+  zabctl agents conformance --mode live --contracts-root "$PWD"
 ```
 
 The optional native evidence cannot turn the support status to pass. Goose

@@ -15,11 +15,11 @@ Zabin owns durable workflow state. Filesystem checkpoints retain only the recove
 | Capability policy (`config/model-tiers.json`) | Selects provider-neutral `fast`, `balanced`, and `deep` capability classes; the host resolves each class to a runtime model. |
 | MCP policy (`config/zabin-mcp.json`) | Defines the two Zabin surfaces, canonical tool inventory, identities, transport, credentials, risk classes, and approval requirements. |
 | Contract schemas (`schemas/`) | Close and version the role registry, capability tiers, MCP policy, and recovery checkpoint formats. |
-| Client adapters (`adapters/`, rendering and installation scripts) | Translate canonical policy into native configuration, conditionally gate client support through compatibility locks, and synchronize prompts and skills without weakening allowlists or approval semantics. |
-| Diagnostics and conformance (`scripts/zabin_doctor.py`, `scripts/run_conformance.py`, `tests/conformance/`) | Check static contract coherence and, when explicitly enabled, verify live identity, authorization boundaries, native-host behavior, lifecycle evidence, and pinned protocol conformance. |
-| Recovery checkpoints (`scripts/recovery_checkpoint.py`) | Store redacted, closed-schema recovery snapshots atomically and compare them with Zabin state. |
+| Client adapters (`adapters/`, the `zabctl agents render`/`install` commands) | Translate canonical policy into native configuration, conditionally gate client support through compatibility locks, and synchronize prompts and skills without weakening allowlists or approval semantics. |
+| Diagnostics and conformance (`zabctl agents doctor`, `zabctl agents conformance`, `tests/conformance/`) | Check static contract coherence and, when explicitly enabled, verify live identity, authorization boundaries, native-host behavior, lifecycle evidence, and pinned protocol conformance. |
+| Recovery checkpoints (`zabctl agents recovery`) | Store redacted, closed-schema recovery snapshots atomically and compare them with Zabin state. |
 
-Claude Code and Codex are supported adapter targets. Goose 1.45.0 and PI remain unsupported and fail closed. Their compatibility locks and conformance evidence preserve the audited boundary, while rendering and installation keep active native configuration disabled. See the [Goose compatibility decision](../adapters/goose/COMPATIBILITY.md) and [conformance contract](../tests/conformance/README.md).
+The render, install, diagnostics, conformance, and recovery commands above are the `zabctl agents` command family, implemented in the zabin repository's `zabin-agent-tooling` crate; this repository holds the contracts they operate on. Claude Code and Codex are supported adapter targets. Goose 1.45.0 and PI remain unsupported and fail closed. Their compatibility locks and conformance evidence preserve the audited boundary, while rendering and installation keep active native configuration disabled. See the [Goose compatibility decision](../adapters/goose/COMPATIBILITY.md) and [conformance contract](../tests/conformance/README.md).
 
 ## Layer Dependencies
 

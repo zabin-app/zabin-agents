@@ -3,7 +3,7 @@
 This repository is the source of truth for portable role instructions, skills,
 client adapters, schemas, and the policy for two Zabin MCP surfaces. It renders
 and installs configuration for supported clients without embedding credentials,
-and validates the same contracts with dependency-free Python tooling.
+and validates the same contracts with the `zabctl agents` command family.
 
 ## Client support
 
@@ -27,47 +27,48 @@ clients unsupported.
 
 ## Quick start
 
-Python 3.11 or newer is required; the repository has no runtime dependencies.
-From a trusted checkout, run the offline static diagnostics and unit tests:
+The agent-contracts tooling is the `zabctl agents` command family, implemented
+in the zabin repository's `zabin-agent-tooling` crate and shipped in the
+`zabctl` binary. From a trusted checkout, run the offline static diagnostics:
 
 ```sh
-python scripts/zabin_doctor.py --json
-python -m unittest discover -s tests -p 'test_*.py'
+zabctl agents doctor
 ```
 
-Static diagnostics do not access the network or read credential files. See
-[Development](docs/DEVELOPMENT.md) for the maintained setup and verification
-workflow.
+Static diagnostics do not access the network or read credential values;
+`--report-path <PATH>` additionally writes the JSON report (mode `0600`). The
+contract, render, install, recovery, and conformance behavior is covered by the
+zabin workspace test suites (`cargo test -p zabin-agent-tooling`) and by
+`zabctl agents conformance`. See [Development](docs/DEVELOPMENT.md) for the
+maintained setup and verification workflow.
 
 ## Safe installation
 
-The installer has no implicit home-directory destinations. Use trusted,
-absolute, non-overlapping paths and inspect a dry run before copying:
+The installer has no implicit home-directory destinations. Use a trusted,
+absolute destination and inspect a dry run before copying:
 
 ```sh
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode dry-run \
-  --project-destination /absolute/path/to/project \
-  --skills-destination /absolute/path/to/client-skills \
-  --instructions-destination /absolute/path/to/client-instructions
+  --destination /absolute/path/to/destination
 
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode copy \
-  --project-destination /absolute/path/to/project \
-  --skills-destination /absolute/path/to/client-skills \
-  --instructions-destination /absolute/path/to/client-instructions
+  --destination /absolute/path/to/destination
 
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode check \
-  --project-destination /absolute/path/to/project \
-  --skills-destination /absolute/path/to/client-skills \
-  --instructions-destination /absolute/path/to/client-instructions
+  --destination /absolute/path/to/destination
 ```
 
-By default both supported client adapters are included. Repeat `--target` with
-`claude_code` and/or `codex` to select targets. File installation does not grant
-workspace trust, approve MCP servers, or activate them; those remain separate
-client-controlled states.
+The installer lays out the portable role instructions under `<destination>/agents`
+and the Agent Skills under `<destination>/.agents/skills`, recording ownership in
+`<destination>/.zabin/installer-manifest.json`; the client adapter files
+(`.mcp.json`, `.claude/settings.json`, `.codex/config.toml`) are produced
+separately by `zabctl agents render`. `--mode symlink` links a locally trusted
+development destination at the source instead of copying. File installation does
+not grant workspace trust, approve MCP servers, or activate them; those remain
+separate client-controlled states.
 
 ## Goose audit workflow
 
@@ -76,42 +77,34 @@ target. Rendering produces credential-free, inactive evidence; it does not
 produce configuration that may be activated:
 
 ```sh
-python scripts/render_adapters.py \
+zabctl agents render \
   --target goose \
   --output-dir /absolute/disposable/goose-render \
-  --dry-run
-python scripts/render_adapters.py \
-  --target goose \
-  --output-dir /absolute/disposable/goose-render
-python scripts/render_adapters.py \
+  --mode dry-run
+zabctl agents render \
   --target goose \
   --output-dir /absolute/disposable/goose-render \
-  --check
+  --mode write
+zabctl agents render \
+  --target goose \
+  --output-dir /absolute/disposable/goose-render \
+  --mode check
 ```
 
-The installer target remains inert under the unsupported lock. Its copy and
-check modes may synchronize the shared portable instructions and skills, but
-must create no active Goose recipe or settings artifact:
+The installer never produces an active Goose recipe or settings artifact. Its
+copy and check modes synchronize only the shared portable role instructions and
+Agent Skills, reporting activation `inactive`:
 
 ```sh
-python scripts/install_adapters.py \
+zabctl agents install \
   --mode dry-run \
-  --project-destination /absolute/disposable/goose-project \
-  --skills-destination /absolute/disposable/goose-client/.agents/skills \
-  --instructions-destination /absolute/disposable/goose-client/agents \
-  --target goose
-python scripts/install_adapters.py \
+  --destination /absolute/disposable/goose-dest
+zabctl agents install \
   --mode copy \
-  --project-destination /absolute/disposable/goose-project \
-  --skills-destination /absolute/disposable/goose-client/.agents/skills \
-  --instructions-destination /absolute/disposable/goose-client/agents \
-  --target goose
-python scripts/install_adapters.py \
+  --destination /absolute/disposable/goose-dest
+zabctl agents install \
   --mode check \
-  --project-destination /absolute/disposable/goose-project \
-  --skills-destination /absolute/disposable/goose-client/.agents/skills \
-  --instructions-destination /absolute/disposable/goose-client/agents \
-  --target goose
+  --destination /absolute/disposable/goose-dest
 ```
 
 Goose can reuse the canonical project `AGENTS.md` hierarchy and Agent Skills in
@@ -142,8 +135,10 @@ configuration-driven. Port `50051` is the gRPC listener, not an HTTP endpoint.
 | `worker` | `ZABIN_MCP_WORKER_TOKEN` | `mcp-worker.token` |
 
 Do not commit credential files or values. Live diagnostics are opt-in with
-`--live`; alternate files can be selected with `--conductor-token-file` and
-`--worker-token-file`. These environment-variable and default file names are
+`zabctl agents doctor --mode live`; each surface's credential is resolved from
+its environment variable (above), then from a token file — the path in
+`ZABIN_MCP_TOKEN_FILE` / `ZABIN_MCP_WORKER_TOKEN_FILE`, else the default file
+above under `~/.zabin/`. These environment-variable and default file names are
 the complete credential information documented here; never place either value
 in a Goose recipe, settings file, command line, report, or repository file.
 

@@ -31,27 +31,35 @@ Dispatch the registered role at its capability tier, then invoke the canonical p
 
 **BAD:**
 
-```python
-if isinstance(payload, dict):
+```text
+if payload is a mapping:
     return payload
 ```
 
 **GOOD:**
 
-```python
-required = {"status", "summary"}
-if set(payload) != required:
-    raise ContractError("result has missing or unexpected fields")
+```text
+required = {status, summary}
+if fields(payload) != required:
+    fail: "result has missing or unexpected fields"
 ```
 
-## Python Idioms
+## Implementation Idioms (historical: retired Python reference)
 
-- Support Python 3.11 or newer and use the standard library unless a reviewed contract explicitly adds a dependency.
-- Use `pathlib.Path` for filesystem paths, `Mapping`/`Sequence` for read-only inputs, and concrete mutable collections for owned results.
-- Prefer small pure validation, normalization, rendering, and redaction functions around typed immutable records (`dataclass(frozen=True, slots=True)`) for reports and planned operations.
+> **Historical.** The rendering, installation, diagnostics, conformance, and
+> recovery tooling was reimplemented in Rust as the zabin repository's
+> `zabin-agent-tooling` crate; that crate now owns these behaviors and follows
+> the zabin workspace's Rust standards. The idioms in this section describe the
+> retired Python reference implementation and the conventions the contracts in
+> this repository still follow. They are retained for provenance, not as current
+> guidance for new code.
+
+- Keep dependencies minimal — add one only when a reviewed contract explicitly requires it.
+- Use typed path abstractions for filesystem paths, read-only views for inputs, and owned collections for results.
+- Prefer small pure validation, normalization, rendering, and redaction functions around typed immutable records for reports and planned operations.
 - Accept injected environment mappings, transports, paths, clocks, and subprocess boundaries where tests need isolation. Do not reach into ambient state when a caller can supply it.
 - Parse JSON and TOML as data structures. Never modify structured configuration with textual substitution outside the deliberately bounded template renderer.
-- Use explicit encodings, bounded subprocess timeouts, exact argument arrays, and `check=False` when return codes are part of the reported contract.
+- Use explicit encodings, bounded subprocess timeouts, exact argument arrays, and report return codes as part of the contract rather than treating a nonzero exit as a failure to raise.
 - Canonicalize before hashing or comparing semantically equivalent structured values.
 
 ## Error Handling
@@ -64,21 +72,21 @@ if set(payload) != required:
 
 **BAD:**
 
-```python
-raise RuntimeError(f"request failed with token {token}: {error}")
+```text
+fail: "request failed with token {token}: {error}"   # leaks the secret
 ```
 
 **GOOD:**
 
-```python
-raise TransportError("worker authentication failed") from None
+```text
+fail(TransportError): "worker authentication failed"   # names the surface, not the value
 ```
 
 ## Naming Conventions
 
 | Element | Convention | Example |
 | --- | --- | --- |
-| Python modules and functions | lowercase `snake_case` | `recovery_checkpoint` |
+| Modules and functions | lowercase `snake_case` | `recovery_checkpoint` |
 | Classes and exceptions | `PascalCase`; errors end in `Error` | `InvalidCheckpointError` |
 | Constants | uppercase `SNAKE_CASE` | `SCHEMA_VERSION` |
 | Portable role and capability ids | lowercase semantic `snake_case` | `task_validator` |
@@ -130,7 +138,7 @@ Avoid these repository-specific failure modes:
 
 ## Testing Patterns
 
-- Use dependency-free `unittest`, temporary directories, fixtures, and mocks for the default suite. Tests must not need network access, installed clients, credentials, or a writable home directory.
+- The current tests are the `zabin-agent-tooling` crate's Rust integration tests (the retired Python reference used dependency-free `unittest`). Whichever the harness, use temporary directories, in-tree fixtures, and mocks; tests must not need network access, installed clients, credentials, or a writable home directory.
 - Pair valid-contract tests with mutation tests for missing, extra, duplicate, empty, malformed, reordered, mismatched, and unsupported values.
 - Compare generated artifacts byte-for-byte and parse them with native JSON/TOML readers. Prove deterministic output across input order and independent destinations.
 - Exercise every mutation mode: clean install, unchanged repeat, drift check, unmanaged collision, modified owned component, rename/removal, rollback failure, symlink substitution, and check/use race.
