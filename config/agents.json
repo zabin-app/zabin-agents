@@ -128,9 +128,9 @@
       "source": "agents/implementor.md",
       "model_tier": "balanced",
       "mutation_scope": {"mode": "task_write_files", "write_paths": ["$task.write_files"], "deny_paths": ["workflow/plans/**"], "requires_isolation": true},
-      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "shell.run", "zabin.worker"],
+      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "git.commit", "shell.run", "zabin.worker"],
       "input_schema": {"type": "object", "required": ["project_id", "task_id", "worktree", "write_files"], "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}, "worktree": {"type": "string"}, "write_files": {"type": "array"}}, "additionalProperties": false},
-      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed", "verification"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}, "verification": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed", "verification"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}, "verification": {"type": "array"}, "containment": {"type": "string"}}, "additionalProperties": false},
       "timeout_seconds": 7200,
       "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 3, "partial_result": "discard"},
       "adapter_requirements": [

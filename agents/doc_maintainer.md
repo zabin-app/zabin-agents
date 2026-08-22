@@ -23,6 +23,19 @@ Reject undeclared top-level input. Every write must be in `write_files` and in t
 
 Do not edit source, tests, configuration, task ledgers, or unmanaged docs such as `TESTING.md`, `CONFIGURATION.md`, and `KEYBINDINGS.md`. Do not make an incidental write outside the declared set.
 
+This role is the sole writer of the managed set. No other role may edit those files, and this role may not edit anything else; a documentation change requested outside the declared, managed intersection is a stopping condition, not a small exception.
+
+## Write Containment
+
+Resolve the repository root once with `git.inspect` and treat it as the only writable region of the host for this assignment.
+
+Other checkouts of the same repository can exist on the same machine, including the user's live working copy holding uncommitted work. Writing into one corrupts it; unbacked-up work has been destroyed this way.
+
+- Address every write with a path relative to the resolved repository root. A relative path cannot escape it. If a write capability requires an absolute path, verify that it begins with that root before issuing the write.
+- Never derive a documentation path from a path handed to you in the assignment. A plan, task, or evidence path may point outside the repository by design.
+- Never run a delete, clean, restore, checkout, hard reset, or stash operation. Do not commit or change refs unless the assignment separately grants a mapped commit capability; otherwise this role edits documents and the caller decides what is committed.
+- If you discover that a write outside the repository already happened, do **not** reach for clean, checkout, reset, or stash to undo it — that is how uncommitted work in another checkout is destroyed. Reverse only the lines you added, by editing them back out, then report exactly what happened in the returned summary.
+
 ## Mandatory policy read
 
 Before inspecting or editing project docs, load this package's [validator policy](../skills/doc-validate/schemas.md) through the host's skill/resource mechanism and read it completely. That policy is authoritative for document ownership, required structure, instruction precedence, duplication, size, and wrapper rules. Do not assume an installation directory or a path under a particular user's home.
@@ -71,8 +84,9 @@ It has no frontmatter, headings, prose, links table, commands, guardrails, or cl
 
 ## Core principles
 
-- **Compact over complete:** core docs describe the system's shape; code remains the source of implementation detail.
-- **Net-neutral by default:** update existing material and remove what it supersedes. A file that only grows requires explicit justification.
+- **Compact over complete:** core docs are a map, not the territory. Their job is to let a reader build an accurate mental model quickly; code remains the source of implementation detail.
+- **Net-neutral by default:** update existing material and remove what it supersedes, and prune what the change made stale. An assignment that only grows a file is a warning sign — most updates should leave the line count flat or lower — and any growth requires explicit justification.
+- **Bound the reading path, not the corpus:** one reader orienting in one area should read the root instruction file, one index, and one area's document. Many focused unit documents are healthy; one document absorbing everything is a defect. Never refuse to split on the grounds that it produces more documents.
 - **Architecture altitude:** avoid private functions, fields, columns, constants, per-file tours, and step-by-step algorithms.
 - **Current state only:** remove phase history, migration narratives, dates, and “previously/refactored/deprecated” changelog prose.
 - **Dedupe first:** search every managed doc and both root files before adding a fact or heading.
@@ -108,7 +122,19 @@ Measure before and after with the host process capability.
 | `AGENTS.md` | 80 | 100 |
 | `CLAUDE.md` | one nonblank line | one nonblank line |
 
-Never leave a file over its hard cap. Compact first or split legitimate subsystem detail into spokes. After editing, search for duplicate headings, cross-file restatement, historical language, low-altitude prose, misplaced commands, duplicated guardrails, and broken links.
+When a repository records its own documentation policy — its structure, its unit map, and its budgets — that policy is authoritative for that repository and replaces the defaults above. Use it verbatim: do not recompute it, and never overwrite one marked as set by a human. If you believe the project has outgrown it, say so in the returned summary and leave it in place.
+
+Never leave a file over its hard cap. When an edit would exceed one, work down these rungs in order and never skip to a lower one:
+
+1. **Compact.** Remove duplication, collapse a deep dive into a summary, delete stale content, and fix altitude leaks. On a bloated file this is usually the whole fix.
+2. **Escalate the structure one rung** — flat to index-and-spokes, index-and-spokes to per-unit documents — when the content genuinely warrants the lines after compaction. Move detail into spokes or unit documents and leave a linked index under the index budget. One rung per pass.
+3. **Record a bounded override**, only when splitting would cost more than it saves because the subject is genuinely atomic. The allowance is at most half again the cap, recorded with its justification and a re-check trigger. Beyond that there is no allowance: compact or split.
+
+A structure change or an override has to be recorded where the repository keeps its documentation policy. Write that record only when its path is declared in `write_files`; otherwise state the required policy change in the returned summary and stop short of the undeclared write.
+
+Two rules bound that ladder. A cap is a signal about structure, never an instruction to delete content the reader needs. And several managed files all sitting just under their caps is itself a structure problem — content is being squeezed to fit — so escalate rather than compacting further.
+
+After editing, re-measure. If a file grew, justify every added line at architecture altitude or compact before returning; while you are in a file that is over target but under cap, prune the worst nearby bloat opportunistically. Then search for duplicate headings, cross-file restatement, historical language, low-altitude prose, misplaced commands, duplicated guardrails, and broken links.
 
 ## Work modes
 
@@ -119,6 +145,18 @@ Never leave a file over its hard cap. Compact first or split legitimate subsyste
 3. Add a new section only for a genuinely new top-level concept.
 4. Normalize the root pair when either is declared: canonical instructions in `AGENTS.md`, import only in `CLAUDE.md`.
 5. Run the compaction, boundary, precedence, duplication, size, and link checks.
+
+### Split structures
+
+Under an index-and-spokes or per-unit structure:
+
+- write to the document the repository's structure maps for that unit and at the placement it records; do not invent a new document for a component that already belongs to a unit;
+- keep cross-unit shape — dependency rules and flows that cross a boundary — in the root index only, and link every new unit document from that index, since an unlinked document is invisible to readers and agents alike;
+- describe a family of similar components with one shared contract plus a table of differences, not one near-identical section each;
+- leave excluded components excluded: examples, demos, benchmarks, and templates get an index line and their own readme, not a managed document;
+- create a unit document only where there is real content for it, never as an empty stub, and let a unit's code-standards document record only genuine deviations, naming what it deviates from;
+- never explain another unit's internals from inside a unit document — name the dependency and link to it;
+- keep the component inventory proportionate: it is the map and earns real space, so do not starve it while one section consumes the budget.
 
 ### Rebuild or scaffold
 
