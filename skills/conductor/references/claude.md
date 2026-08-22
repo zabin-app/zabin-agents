@@ -19,13 +19,13 @@ An event is a wake-up, never proof: confirm plan approval with a `get_plan` read
 
 ## Server qualification and the same-session boundary
 
-The canonical policy in [`config/zabin-mcp.json`](../../../config/zabin-mcp.json) owns the surface identities, URLs, and credential environment variables; do not restate them here or in a prompt. Its client server keys qualify as `mcp__zabin__<tool>` for the conductor surface and `mcp__zabin-worker__<tool>` for the worker surface. `zabctl agents render --target claude` produces the `.mcp.json` and `.claude/settings.json` that register them, with bearer values read from the environment.
+The canonical policy in [`config/zabin-mcp.json`](../../../config/zabin-mcp.json) owns the surface identities, URLs, and credential environment variables; do not restate them here or in a prompt. Its client server keys qualify as `mcp__zabin__<tool>` for the conductor surface and `mcp__zabin-worker__<tool>` for the worker surface. `zabctl agents render --target claude_code` produces the `.mcp.json` and `.claude/settings.json` that register them (bearer values read from the environment), plus one `.claude/agents/<role>.md` subagent definition per registered role — the frontmatter `tools:` allowlists below are rendered from `config/agents.json`, not hand-maintained.
 
 Both servers are registered in one session, so every subagent process can reach both listeners regardless of which one its dispatch text names (Invariant 11 in the skill). The enforcement here is the dispatched agent type's frontmatter `tools:` allowlist: an implementor must be granted `mcp__zabin-worker__*` and nothing more. An agent type carrying `tools: '*'` or the conductor grant can claim, verdict, and complete its own card from inside its worktree, whatever the stub says.
 
 ## Workflow programs
 
-The six programs are carried in this repository at [`adapters/claude/workflows/`](../../../adapters/claude/workflows) and belong in Claude Code's user workflow directory, `~/.claude/workflows/`. The `zabctl agents install` payload synchronizes portable role instructions and skills only, so placing them there is currently a manual copy from the versioned adapter directory — never an edit of the installed copy, which is downstream of this repository.
+The six programs are carried in this repository at [`adapters/claude/workflows/`](../../../adapters/claude/workflows) and belong in Claude Code's user workflow directory, `~/.claude/workflows/`. `zabctl agents install` lays them there for the `claude_code` target — manifest-tracked byte copies, tombstoned when a program leaves this payload, refused if an unowned file already sits at the path. Never edit the installed copy; it is downstream of this repository.
 
 Dispatch one by name with the Workflow tool — `Workflow({name: "review-diff", args: {…}})` — passing inputs as the `args` object documented in that program's header. Programs run in the background and notify on completion. A program returns synthesized data and persists nothing: no MCP call, no ledger, no merge. The main loop writes every result to Zabin in the same turn it arrives.
 
