@@ -38,8 +38,10 @@ in the zabin repository's `zabin-agent-tooling` crate and shipped in the
 `zabctl` binary. `zabctl agents bootstrap --repo <git-url>` clones (or
 fast-forwards) this repository and runs static diagnostics in one step;
 name `--install-into <dir>` to also install and render adapters in the same
-call. See [docs/INSTALL.md](docs/INSTALL.md) for the full walkthrough,
-including the exact behavior when `--install-into` is and isn't given.
+call. A record-driven bare re-run checks and reports without writing; pass
+`--apply` to perform the recorded install. See
+[docs/INSTALL.md](docs/INSTALL.md) for the full walkthrough, including the
+exact behavior when `--install-into`, `--apply`, or neither is given.
 
 From a trusted checkout, the offline static diagnostics alone:
 

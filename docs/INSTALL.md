@@ -89,16 +89,28 @@ zabctl agents bootstrap --repo <git-url> --install-into /absolute/path/to/your/p
 
 Verified: this produces a full Claude Code + Codex adapter set inside the
 project (artifact list in [Coverage matrix](#coverage-matrix) below) and
-records the repo/destination/install-into triple in `~/.zabin/agents.toml`,
-so a later bare `zabctl agents bootstrap` re-runs the same install:
+records the repo/destination/install-into triple in `~/.zabin/agents.toml`.
+
+A later **bare** `zabctl agents bootstrap` re-run fast-forwards the bundle
+and then runs the installer in **check mode only** — it reports drift and
+writes nothing. Naming `--install-into` on an invocation is consent to
+write for that run; on a record-driven re-run, consent is the new
+`--apply` flag:
 
 ```text
+$ zabctl agents bootstrap
 Contracts bundle: <dest> (already_current from file://<remote>.git)
-  commit 604e4f32... (was 604e4f32...)
+  commit b119e693... (was b119e693...)
 Diagnostics: degraded (goose_compatibility)
-Installation: unchanged into <project> for claude_code, codex
+Installation: checked (nothing written) — verified in <project> for claude_code, codex
 Recorded in ~/.zabin/agents.toml
 ```
+
+When upstream moved, the check reports what an `--apply` would change;
+`zabctl agents bootstrap --apply` then performs the recorded install
+(`Installation: unchanged into <project> …` when nothing drifted). Both
+transcripts above are verified output of the current binary against a
+scratch `file://` remote.
 
 ### Recommended follow-up: a Claude Code *home* (user-level) setup
 
@@ -120,7 +132,9 @@ paths). If you don't need a global install, prefer the project-level form
 above — it needs no relocation and is the pattern most users want.
 
 `--target` (default `claude_code,codex`) selects which client adapters
-`bootstrap` installs; `--backup-and-replace` is the only way to reuse an
+`bootstrap` installs; `--apply` is the consent flag that lets a
+record-driven re-run write (a bare re-run always runs the installer in
+check mode and reports instead); `--backup-and-replace` is the only way to reuse an
 existing, non-matching destination — it moves the old directory to a
 timestamped backup (verified: `<dest>.backup-<UTC-timestamp>`, never
 deleted) and clones fresh. A destination that exists, isn't a git repository,
