@@ -3,16 +3,19 @@
 This repository is the source of truth for portable role instructions, skills,
 client adapters, schemas, and the policy for two Zabin MCP surfaces. It renders
 and installs configuration for supported clients without embedding credentials,
-and validates the same contracts with the `zabctl agents` command family.
+and validates the same contracts with the `zabctl agents` command family. For
+the full per-client, end-to-end setup walkthrough, see
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ## Client support
 
 | Client | Status | Adapter output |
 | --- | --- | --- |
-| Claude Code | Supported | `.mcp.json` and `.claude/settings.json` |
-| Codex | Supported | `.codex/config.toml` |
-| Goose 1.45.0 | Unsupported; fail closed | Inert inspection output only; no active artifact |
-| PI | Unsupported; fail closed | Disabled template (`{"packages": []}`) |
+| Claude Code | Supported, fully rendered | `.mcp.json`, `.claude/settings.json`, `.claude/agents/<role>.md` × 13, `.claude/workflows/*.js` × 6 |
+| Codex | Supported, fully rendered | `.codex/config.toml` |
+| Goose 1.45.0 | Unsupported; fail closed | Inert inspection output only (`goose/recipe.json`, `goose/settings.json`); no active artifact |
+| PI | Unsupported; fail closed | Disabled template (`{"packages": []}`); no render target |
+| OpenCode | Unmanaged; version-dependent | None — no adapter, lock, or compatibility audit in this repository |
 
 Goose is an explicit renderer and installer target so its fail-closed behavior
 can be audited, but it is not a supported or activatable Zabin client. Its
@@ -23,13 +26,22 @@ target; its decision is recorded in [PI compatibility](adapters/pi/COMPATIBILITY
 the [extension lock](adapters/pi/extension-lock.json), and the
 [disabled settings template](adapters/pi/settings.json.template). The
 [conformance lock](tests/conformance/runner-lock.json) independently keeps both
-clients unsupported.
+clients unsupported. OpenCode carries no adapter, render target, or lock at
+all — any claim about its native `AGENTS.md`/Agent Skills consumption is
+unverified here and may age with its releases; see
+[docs/INSTALL.md](docs/INSTALL.md#r10-version-dependent-claims).
 
 ## Quick start
 
 The agent-contracts tooling is the `zabctl agents` command family, implemented
 in the zabin repository's `zabin-agent-tooling` crate and shipped in the
-`zabctl` binary. From a trusted checkout, run the offline static diagnostics:
+`zabctl` binary. `zabctl agents bootstrap --repo <git-url>` clones (or
+fast-forwards) this repository and runs static diagnostics in one step;
+name `--install-into <dir>` to also install and render adapters in the same
+call. See [docs/INSTALL.md](docs/INSTALL.md) for the full walkthrough,
+including the exact behavior when `--install-into` is and isn't given.
+
+From a trusted checkout, the offline static diagnostics alone:
 
 ```sh
 zabctl agents doctor
@@ -63,12 +75,18 @@ zabctl agents install \
 
 The installer lays out the portable role instructions under `<destination>/agents`
 and the Agent Skills under `<destination>/.agents/skills`, recording ownership in
-`<destination>/.zabin/installer-manifest.json`; the client adapter files
-(`.mcp.json`, `.claude/settings.json`, `.codex/config.toml`) are produced
-separately by `zabctl agents render`. `--mode symlink` links a locally trusted
-development destination at the source instead of copying. File installation does
-not grant workspace trust, approve MCP servers, or activate them; those remain
-separate client-controlled states.
+`<destination>/.zabin/installer-manifest.json`; it also renders and installs
+every default client adapter (`claude_code` and `codex` — `.mcp.json`,
+`.claude/settings.json`, `.claude/agents/*.md`, `.claude/workflows/*.js`,
+`.codex/config.toml`) in the same run, needing no credential environment
+variables to do so (the headers it writes are `${VAR}` reference strings, not
+values). `zabctl agents render --target <name>` regenerates or audits one
+target's artifacts in isolation instead — for example the inert Goose
+evidence below — and, unlike `install`, does require both credential
+environment variables to be set before it writes anything. `--mode symlink`
+links a locally trusted development destination at the source instead of
+copying. File installation does not grant workspace trust, approve MCP
+servers, or activate them; those remain separate client-controlled states.
 
 ## Goose audit workflow
 
@@ -144,6 +162,7 @@ in a Goose recipe, settings file, command line, report, or repository file.
 
 ## Verification and reference
 
+- [Installation guide](docs/INSTALL.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Code standards](docs/CODE_STANDARDS.md)
 - [Development](docs/DEVELOPMENT.md)
