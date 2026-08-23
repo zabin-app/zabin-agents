@@ -18,22 +18,63 @@ read as a supported-client guarantee.
   ```
 
   ```text
-  zabctl 0.1.0
   zabin-agent-tooling 0.1.0 (capability schema 1)
   ready: yes (8 of 8 commands implemented)
   ```
 
   `agents` never contacts `zabin-server`; it works with no server, no
   credentials, and no config file.
-- Git, for the manual-fallback clone.
+- Git — only for the fresh-machine `bootstrap` clone path below. Working
+  inside a zabin checkout needs no clone: the bundle is already at
+  `<repo>/.agents`.
 - Native clients (Claude Code, Codex, …) are needed only to *use* what gets
   installed, not to run `zabctl agents` itself.
 
+## Source of truth: the repo-embedded bundle
+
+The contracts bundle ships **inside the zabin repository**, at `<repo>/.agents`
+— it is not a separate repository to clone. `ContractsRoot::discover` walks
+ancestors from the current directory, testing each directory and its
+`.agents` child, and stops at the first bundle it finds; the walk also stops
+at the enclosing repository root (so a bundle above your project is never
+adopted) and never reaches or adopts `$HOME`. Practically: run any
+`zabctl agents <command>` from anywhere inside a zabin checkout and it finds
+`.agents` on its own —
+
+```sh
+zabctl agents doctor
+```
+
+```text
+Resolved contracts root to /path/to/zabin/.agents (discovered from /path/to/zabin/some/subdir)
+Zabin doctor: DEGRADED (static mode)
+...
+```
+
+— verified from the repository root and from a nested subdirectory alike; the
+discovery notice above is printed to stderr only when the root was
+discovered, never when `--contracts-root` was given explicitly.
+
+Outside a zabin checkout — installing into another project, or running from a
+different working directory — name the bundle explicitly:
+
+```sh
+zabctl agents install --contracts-root /path/to/zabin/.agents \
+  --mode copy --destination /absolute/destination
+```
+
+`doctor`, `render`, `install`, `validate`, and `conformance` all accept
+`--contracts-root`; an explicit path is validated as given and is never
+silently substituted with a discovered one.
+
 ## Quick start: one-command bootstrap
 
-The fastest path is `zabctl agents bootstrap`, which acquires (clones or
-fast-forwards) this repository, runs static diagnostics, and — only when
-told where — installs and renders adapters, in one flow:
+`zabctl agents bootstrap` is for a machine that does **not** already have a
+zabin checkout and wants its own portable copy of the bundle. It acquires
+(clones or fast-forwards) a contracts-bundle-shaped repository, runs static
+diagnostics, and — only when told where — installs and renders adapters, in
+one flow. If you already have a zabin checkout, skip this section and use
+`--contracts-root <repo>/.agents` directly, as above.
 
 ```sh
 zabctl agents bootstrap --repo <git-url>
@@ -141,16 +182,14 @@ deleted) and clones fresh. A destination that exists, isn't a git repository,
 or tracks a different remote is refused otherwise (verified: exit 2, "exists
 but is not a git repository; nothing was changed").
 
-## Manual fallback: clone + doctor / install / render
+## Manual flow: doctor / install / render
 
-If you manage the clone yourself, or need finer control than `bootstrap`
-gives you:
+For finer control than `bootstrap` gives you, run the commands directly
+against the repo-embedded bundle — no clone or `cd` required beyond having
+the zabin checkout:
 
 ```sh
-git clone <git-url> ~/.agents
-cd ~/.agents
-
-# Offline, no network/credential reads:
+# From anywhere inside the checkout; offline, no network/credential reads:
 zabctl agents doctor
 ```
 
@@ -158,6 +197,7 @@ Verified against this repository's own bundle — the two dummy `mcp.token` /
 `mcp-worker.token` files under `~/.zabin` are what `env=false` falls back to:
 
 ```text
+Resolved contracts root to /path/to/zabin/.agents (discovered from /path/to/zabin)
 Zabin doctor: DEGRADED (static mode)
 Credentials (availability only):
   - conductor: ZABIN_MCP_TOKEN env=false; mcp.token file=true
@@ -177,12 +217,14 @@ Checks:
 stays unsupported by design), not a failure to fix.
 
 Then install the shared roles, skills, and every default client adapter in
-one step:
+one step. Add `--contracts-root <repo>/.agents` when the working directory
+isn't inside the checkout — for example installing into `~` for a global
+Claude Code setup:
 
 ```sh
-zabctl agents install --mode dry-run --destination /absolute/destination
-zabctl agents install --mode copy --destination /absolute/destination
-zabctl agents install --mode check --destination /absolute/destination
+zabctl agents install --contracts-root <repo>/.agents --mode dry-run --destination /absolute/destination
+zabctl agents install --contracts-root <repo>/.agents --mode copy --destination /absolute/destination
+zabctl agents install --contracts-root <repo>/.agents --mode check --destination /absolute/destination
 ```
 
 **Verified, and a correction to older assumptions:** `install` has no
@@ -199,11 +241,31 @@ reference strings a client resolves at its own runtime, never a value). One
 <dest>/.agents/skills/{conductor,docs-sync,doc-validate}/...
 <dest>/.claude/agents/<13 role, kebab-case>.md
 <dest>/.claude/settings.json
+<dest>/.claude/skills/{conductor,docs-sync,doc-validate} (symlinks -> <dest>/.agents/skills/...)
 <dest>/.claude/workflows/<6 program>.js
 <dest>/.codex/config.toml
 <dest>/.mcp.json
 <dest>/.zabin/installer-manifest.json
 ```
+
+The `.claude/skills/<name>` entries are manifest-tracked symlinks — one per
+bundle skill, bridging the portable `.agents/skills/<name>` sources into the
+tree Claude Code discovers skills from — recorded in the manifest as
+`skill_link` entries alongside the `instruction`, `skill`, and `adapter`
+kinds already tracked there.
+
+**Collision rule:** any pre-existing, unmanaged file or directory at a path
+the installer would write is refused outright, for both adapter files and
+skill-bridge symlinks — verified:
+
+```text
+error: contract: adapter collision at <dest>/.claude/agents/doc-maintainer.md: [{"current":"<unmanaged>","expected":"sha256:...", ...}]
+error: contract: skill_link collision at <dest>/.claude/skills/conductor: [{"current":"<unmanaged>","expected":"sha256:...", ...}]
+```
+
+Move hand-maintained content at any adapter or skill destination aside before
+installing; the installer never overwrites something it does not already own
+in the manifest.
 
 `check` compares against the manifest and reports drift (`changes: []` and
 `"installation": "verified"` on a clean tree; exit 1 on drift, exit 2 on an
@@ -362,9 +424,12 @@ correct them there and re-render.
 
 [`skills/conductor`](../skills/conductor/README.md) is **the** conductor
 contract — the one portable, MCP-based pipeline skill, installed by
-`zabctl agents install`/`bootstrap` into `<destination>/.agents/skills`. Any
-host-specific translation belongs in an adapter note beside it, never in a
-forked copy: for Claude Code that note is
+`zabctl agents install`/`bootstrap` into `<destination>/.agents/skills`, and
+bridged for the `claude_code` target as a manifest-tracked symlink at
+`<destination>/.claude/skills/conductor` (see [Manual flow](#manual-flow-doctor--install--render)
+above) so Claude Code discovers it without a forked copy. Any host-specific
+translation belongs in an adapter note beside it, never in a forked copy: for
+Claude Code that note is
 [`skills/conductor/references/claude.md`](../skills/conductor/references/claude.md).
 
 [`adapters/claude`](../adapters/claude) carries only the Claude-only extras
@@ -381,64 +446,24 @@ still carry is redundant with this installed one, and its retirement is a
 separate, deliberate, user-triggered step with its own backlog-triage and
 deployment-specifics preconditions; it is not automatic on install.
 
-## Cutover notes (this machine's operator)
+## Upgrading a stale `zabctl`
 
-These steps are specific to bringing *this* machine's live Claude Code setup
-up to date with the renderer's new coverage — not part of the general
-install flow above.
+`doctor`'s `contracts_bundle` check fails outright against a binary built
+before the bundle's current schema — for example a `pathPattern` addition an
+older build has no matcher for:
 
-1. **Reinstall `zabctl` to `~/.local/bin`.** Verified: the currently
-   installed copy predates the `pathPattern` hardening and fails
-   `doctor`'s `contracts_bundle` check outright —
+```text
+Zabin doctor: FAIL (static mode)
+  - [FAIL] contracts_bundle: #/$defs/pathPattern: pattern '...' has no code-owned matcher
+error: contract: agent workflow diagnostics failed: contracts_bundle
+```
 
-   ```text
-   $ zabctl agents doctor --contracts-root ~/.agents
-   Zabin doctor: FAIL (static mode)
-     - [FAIL] contracts_bundle: #/$defs/pathPattern: pattern '...' has no code-owned matcher
-   error: contract: agent workflow diagnostics failed: contracts_bundle
-   ```
-
-   Replace it with the current release binary (`cargo install --path
-   src/zabin-cli` from the zabin workspace, or copy the release artifact)
-   before doing anything else here.
-
-2. **Back up `~/.claude/{skills,agents,workflows}`** before installing —
-   these directories currently hold hand-maintained content that
-   `zabctl agents install`/`render` will treat as installer-owned once
-   adopted:
-
-   ```sh
-   cp -a ~/.claude/skills ~/.claude/agents ~/.claude/workflows \
-     ~/.claude-backup-$(date -u +%Y%m%dT%H%M%SZ)/
-   ```
-
-3. **Diff rendered vs. hand-maintained agents before accepting.** Verified,
-   direct diff of a freshly-rendered `.claude/agents/*.md` set against the
-   currently installed hand-maintained copies shows the renderer's own,
-   consistent semantic-diff list — expect every file to show all of:
-   - **kebab-case names**: `code_quality_inspector` → `code-quality-inspector`
-     (frontmatter `name:` and filename both).
-   - **Pinned per-tier models**: a `model:` frontmatter field appears
-     (`haiku`/`sonnet`/`opus` by capability tier) where the hand-maintained
-     files have none.
-   - **Terse, single-line `description:`** replacing the longer
-     hand-written dispatch prose (unabridged operational content moves into
-     the body, not the frontmatter).
-   - **`codebase-researcher` gains `Bash`** in its tool allowlist (was
-     `Read, Glob, Grep`; now adds `Bash` — verified diff).
-   - **`external-researcher` and `integration-verifier` are narrowed**:
-     `external-researcher` drops `Read, Glob, Grep` (keeps only
-     `WebSearch, WebFetch`); `integration-verifier` drops `Glob, Grep`
-     (keeps `Read, Bash`) — verified diff.
-
-   Every one of these differences traces to
-   [`config/agents.json`](../config/agents.json)'s `required_tools` for
-   that role (e.g. `codebase_researcher`: `filesystem.read`,
-   `filesystem.search`, `git.inspect`; `external_researcher`: `web.search`,
-   `web.fetch` only). If a difference looks wrong, **fix the role's
-   `required_tools` in the registry first** and re-render — do not hand-edit
-   the generated `.claude/agents/*.md` file, which `install`/`render`
-   `check` mode will flag as drift on the next run.
+Rebuild or reinstall `zabctl` (`cargo install --path src/zabin-cli` from the
+zabin workspace, or copy the current release artifact) before doing anything
+else. Before adopting a rendered `.claude/{agents,skills,workflows}` set over
+a hand-maintained one, back it up first — `install`/`render` treat those
+paths as installer-owned once adopted, and the collision rule above refuses
+to run until pre-existing unmanaged content is moved aside.
 
 Full command reference and live-mode diagnostics:
 [docs/DEVELOPMENT.md](DEVELOPMENT.md). System design and trust boundaries:
