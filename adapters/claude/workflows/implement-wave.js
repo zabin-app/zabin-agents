@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Dispatched by the conductor for the worktree-parallel sub-group of a wave (tasks with no write-file overlap). Sequential/overlapping tasks stay in the main loop.',
   phases: [
     { title: 'Implement', detail: 'one implementor per task, isolated worktree, model per complexity' },
-    { title: 'Validate', detail: 'task_validator (haiku) checks each task as soon as it lands' },
+    { title: 'Validate', detail: 'task-validator (haiku) checks each task as soon as it lands' },
   ],
 }
 
@@ -198,7 +198,7 @@ ${task.content
 Verify every acceptance criterion, check file scope against the task's declared write-files, and scan for obvious errors. Do NOT run builds or tests.
 
 Note: the implementor was instructed NOT to append a Completion Summary to the task file — the conductor does that. Its absence is expected and is NOT a finding.`,
-      { agentType: 'task_validator', model: 'haiku', label: `validate:${task.slug}`, phase: 'Validate', schema: VALIDATION_SCHEMA }
+      { agentType: 'task-validator', model: 'haiku', label: `validate:${task.slug}`, phase: 'Validate', schema: VALIDATION_SCHEMA }
     ).then(validation => ({ task, impl, validation }))
   }
 )

@@ -30,7 +30,7 @@ const VERDICT_SCHEMA = {
 const checks = await parallel(ASSUMPTIONS.map(a => () =>
   agent(
     `Try to REFUTE this assumption: "${a.claim}"\nInspect the actual code/docs. Default to refuted=true if you cannot confirm it with concrete evidence.`,
-    { agentType: a.agentType || 'codebase_researcher', model: 'sonnet', label: `verify:${a.label}`, phase: 'Verify', schema: VERDICT_SCHEMA }
+    { agentType: a.agentType || 'codebase-researcher', model: 'sonnet', label: `verify:${a.label}`, phase: 'Verify', schema: VERDICT_SCHEMA }
   ).then(v => ({ assumption: a, verdict: v }))
 ))
 

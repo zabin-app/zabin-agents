@@ -44,12 +44,12 @@ const diagnoses = await pipeline(
   ISSUES,
   i => agent(
     `Investigate this code-review finding and locate its root cause:\n\n${i.text}\n\nVerify the issue actually exists in the code before diagnosing. If it does not reproduce, set confirmed=false and explain.`,
-    { agentType: 'codebase_researcher', model: 'sonnet', label: `investigate:${i.label}`, phase: 'Investigate', schema: DIAGNOSIS_SCHEMA }
+    { agentType: 'codebase-researcher', model: 'sonnet', label: `investigate:${i.label}`, phase: 'Investigate', schema: DIAGNOSIS_SCHEMA }
   ),
   (d, i) => !d || !d.confirmed ? { item: i, diagnosis: d, upheld: false } :
     agent(
       `A diagnosis claims the root cause of "${i.label}" is: ${d.rootCause} with fix: ${d.fixApproach}. Try to REFUTE it — is the root cause correct, and would the fix be complete without regressions? Default refuted=true if unconvinced.`,
-      { agentType: 'codebase_researcher', model: 'sonnet', label: `crosscheck:${i.label}`, phase: 'Cross-check', schema: VERDICT_SCHEMA }
+      { agentType: 'codebase-researcher', model: 'sonnet', label: `crosscheck:${i.label}`, phase: 'Cross-check', schema: VERDICT_SCHEMA }
     ).then(v => ({ item: i, diagnosis: d, upheld: !!v && !v.refuted, dissent: v?.correction }))
 )
 

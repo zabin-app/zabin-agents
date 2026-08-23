@@ -35,13 +35,13 @@ const DOCS_CLAUSE = DOCS.length
 // Dimensions map to the review agentTypes. Agents carry no model in frontmatter — the
 // conductor's model strategy sets tiers here (sonnet workhorses; logic + security on opus).
 const DIMENSIONS = [
-  { key: 'architecture', agentType: 'architecture_enforcer', model: 'sonnet' },
-  { key: 'quality', agentType: 'code_quality_inspector', model: 'sonnet' },
-  { key: 'logic', agentType: 'logic_reasoning_checker', model: 'opus' },
-  { key: 'risks', agentType: 'risks_tradeoffs_analyzer', model: 'sonnet' },
-  { key: 'security', agentType: 'security_reviewer', model: 'opus' },
+  { key: 'architecture', agentType: 'architecture-enforcer', model: 'sonnet' },
+  { key: 'quality', agentType: 'code-quality-inspector', model: 'sonnet' },
+  { key: 'logic', agentType: 'logic-reasoning-checker', model: 'opus' },
+  { key: 'risks', agentType: 'risks-tradeoffs-analyzer', model: 'sonnet' },
+  { key: 'security', agentType: 'security-reviewer', model: 'opus' },
 ]
-if (CHANGE_TYPE === 'bug') DIMENSIONS.unshift({ key: 'bugfix', agentType: 'bug_fix_reviewer', model: 'sonnet' })
+if (CHANGE_TYPE === 'bug') DIMENSIONS.unshift({ key: 'bugfix', agentType: 'bug-fix-reviewer', model: 'sonnet' })
 
 const FINDINGS_SCHEMA = {
   type: 'object',

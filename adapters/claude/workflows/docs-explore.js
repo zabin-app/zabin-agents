@@ -74,7 +74,7 @@ const maps = await pipeline(
 Capture: its responsibility, the handful of key modules (one line each — not every file), what it depends on, its central public types, and its high-level data flows. Note any build/run/test commands and coding conventions you observe under devSignals (those feed other docs, not ARCHITECTURE).
 
 Stay at map altitude: describe the SHAPE, not the implementation. Do NOT enumerate every file, describe private functions/fields/columns step by step, or narrate history ("Phase N"). estimatedDocLines should be a few dozen at most.`,
-    { agentType: 'codebase_researcher', model: 'sonnet', label: `explore:${s.label}`, phase: 'Explore', schema: MAP_SCHEMA }
+    { agentType: 'codebase-researcher', model: 'sonnet', label: `explore:${s.label}`, phase: 'Explore', schema: MAP_SCHEMA }
   ),
   (map, s) => {
     if (!map) return null
