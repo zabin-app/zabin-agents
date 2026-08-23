@@ -232,6 +232,46 @@ Build, run, test, and deploy instructions. Describes HOW to work with the codeba
 
 ---
 
+## Document Type: CONFIGURATION.md (optional, repository-defined)
+
+### Purpose
+An optional fifth core doc, DEVELOPMENT-adjacent: the flag/env-var/config-file reference for a
+project's runnable binaries or deployables — precedence chains, config-file schemas, and
+security-relevant defaults. Not part of `doc_maintainer`'s mandatory core-four, but recognized
+when a repository's own `DOC_POLICY.md` (or equivalent recorded policy) designates it as a
+managed doc with its own budget entry.
+
+### Required Sections
+- One quick-reference table (flags/env vars) per runnable binary or deployable the repository
+  ships.
+
+### Optional Sections
+- Config-file schemas, precedence/resolution-order chains, credential/trust models, worked
+  deployment recipes, security notes specific to configuration surfaces.
+
+### Prohibited Content
+Same as `DEVELOPMENT.md`: architecture descriptions, coding style rules, design pattern
+explanations, and non-command code examples beyond config-file snippets.
+
+### Size and structure
+Follows the size-discipline ladder in "Size Budgets & Compaction" above using whatever budget the
+repository's own `DOC_POLICY.md` records for it (defaulting to the flat/spoke tier when unset).
+When it hits its cap at correct altitude, the expected remedy is the same hub-and-spoke escalation
+as a core doc: `docs/CONFIGURATION.md` becomes a lean index (quick-reference tables + pointers)
+and the detail moves to sibling documents split along a real seam the repository already has —
+per binary, per deployable, or per client/server boundary (for example
+`CLIENT-CONFIGURATION.md`/`SERVER-CONFIGURATION.md`, or a per-service name). Each satellite is a
+managed doc in its own right once declared in `write_files` and recorded in the repository's
+`DOC_POLICY.md`; an unlinked satellite is a broken-spoke-link defect exactly as for the core four.
+
+### Detection Heuristics (for validation)
+- Same content-boundary and duplication heuristics as `DEVELOPMENT.md`.
+- File length over the repository's recorded cap for this doc (or the flat/spoke default if
+  unrecorded) → Error: compact or escalate to hub-and-spoke, same as a core doc.
+- A satellite doc not linked from `docs/CONFIGURATION.md`'s index → Error: broken spoke link.
+
+---
+
 ## Document Type: REVIEW_FOCUS.md
 
 ### Purpose
