@@ -94,7 +94,7 @@
       "source": "agents/external_researcher.md",
       "model_tier": "fast",
       "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
-      "required_tools": ["web.search", "web.fetch"],
+      "required_tools": ["filesystem.read", "web.search", "web.fetch"],
       "input_schema": {"type": "object", "required": ["objective", "source_policy"], "properties": {"objective": {"type": "string"}, "source_policy": {"type": "array"}, "context": {"type": "object"}}, "additionalProperties": false},
       "output_schema": {"type": "object", "required": ["summary", "evidence"], "properties": {"summary": {"type": "string"}, "evidence": {"type": "array"}, "caveats": {"type": "array"}}, "additionalProperties": false},
       "timeout_seconds": 1200,
