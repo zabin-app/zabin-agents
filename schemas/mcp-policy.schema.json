@@ -174,7 +174,7 @@
       "properties": {
         "name": {"$ref": "#/$defs/canonicalToolName"},
         "group": {
-          "enum": ["project", "plan", "task_ledger", "git", "human_in_loop", "attachment", "graph"]
+          "enum": ["project", "plan", "task_ledger", "git", "human_in_loop", "attachment", "graph", "document"]
         },
         "risk_class": {"$ref": "#/$defs/riskId"},
         "approval": {"$ref": "#/$defs/approval"},

@@ -40,7 +40,7 @@
           "destructive": "human_gate",
           "human_interaction": "human_gate"
         },
-        "human_gates": ["register_project", "create_board", "delete_attachment"]
+        "human_gates": ["register_project", "create_board", "delete_attachment", "delete_project_doc"]
       },
       "tools": [
         {"name": "add_action_item", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
@@ -55,6 +55,7 @@
         {"name": "create_plan_draft", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "create_tasks", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "delete_attachment", "group": "attachment", "risk_class": "destructive", "approval": "human_gate", "mutates_state": true},
+        {"name": "delete_project_doc", "group": "document", "risk_class": "destructive", "approval": "human_gate", "mutates_state": true},
         {"name": "finalize_plan", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_graph_summary", "group": "graph", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
@@ -62,11 +63,13 @@
         {"name": "get_pickup_context", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_pipeline_state", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_plan", "group": "plan", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_project_doc", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_question_answers", "group": "human_in_loop", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_server_info", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_task", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "import_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "list_attachments", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_project_docs", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_tasks", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_workspaces", "group": "git", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "post_progress_message", "group": "human_in_loop", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
@@ -94,7 +97,8 @@
         {"name": "update_worktree_status", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "upsert_graph_edges", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "upsert_graph_layer", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
-        {"name": "upsert_graph_nodes", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true}
+        {"name": "upsert_graph_nodes", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "upsert_project_doc", "group": "document", "risk_class": "durable_write", "approval": "auto", "mutates_state": true}
       ],
       "adapter_requirements": [
         {"client": "claude_code", "config_target": ".mcp.json", "server_key": "zabin", "credential_binding": "environment_interpolation", "tool_reference_mode": "client_qualified", "required_fields": ["type", "url", "headers.Authorization"]},
@@ -136,8 +140,10 @@
         {"name": "claim_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_plan", "group": "plan", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "get_project_doc", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_task", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_attachments", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "list_project_docs", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_tasks", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_workspaces", "group": "git", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "post_progress_message", "group": "human_in_loop", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
