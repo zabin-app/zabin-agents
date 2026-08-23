@@ -6,6 +6,7 @@ export const meta = {
 }
 
 // args: { assumptions: [{ label, agentType, claim }] }
+//   agentType ∈ codebase-researcher (internal code) | external-researcher (web/docs) | git-historian (history)
 //   Extract from the draft: every statement about existing code, file paths in the
 //   File Overlap Analysis, layer-dependency assumptions, library capabilities.
 // Tolerate args passed as a JSON-encoded string (a common dispatch mistake) as well as a real object.
@@ -27,12 +28,14 @@ const VERDICT_SCHEMA = {
 }
 
 // Sonnet skeptics — verification is where capability matters, so this stage is not haiku.
-const checks = await parallel(ASSUMPTIONS.map(a => () =>
-  agent(
+const checks = await parallel(ASSUMPTIONS.map(a => () => {
+  // config/agents.json uses snake_case ids; rendered Claude Code names are kebab-case
+  const agentType = (a.agentType || 'codebase-researcher').replace(/_/g, '-')
+  return agent(
     `Try to REFUTE this assumption: "${a.claim}"\nInspect the actual code/docs. Default to refuted=true if you cannot confirm it with concrete evidence.`,
-    { agentType: a.agentType || 'codebase-researcher', model: 'sonnet', label: `verify:${a.label}`, phase: 'Verify', schema: VERDICT_SCHEMA }
+    { agentType, model: 'sonnet', label: `verify:${a.label}`, phase: 'Verify', schema: VERDICT_SCHEMA }
   ).then(v => ({ assumption: a, verdict: v }))
-))
+}))
 
 const bad = checks.filter(Boolean).filter(x => !x.verdict || x.verdict.refuted)
 log(`${bad.length}/${ASSUMPTIONS.length} assumptions refuted`)

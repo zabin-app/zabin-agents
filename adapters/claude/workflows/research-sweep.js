@@ -9,7 +9,7 @@ export const meta = {
 }
 
 // args: { questions: [{ label, agentType, q }] }
-//   agentType ∈ codebase_researcher (internal code) | external_researcher (web/docs) | git_historian (history)
+//   agentType ∈ codebase-researcher (internal code) | external-researcher (web/docs) | git-historian (history)
 // Tolerate args passed as a JSON-encoded string (a common dispatch mistake) as well as a real object.
 const A = (() => { try { return typeof args === 'string' ? JSON.parse(args) : (args || {}) } catch { return {} } })()
 const QUESTIONS = A.questions || []
@@ -58,17 +58,23 @@ const VERDICT_SCHEMA = {
 //   - each load-bearing claim is challenged by 2 SONNET skeptics; majority-refute kills it
 const findings = await pipeline(
   QUESTIONS,
-  item => agent(
-    `${item.q}\n\nReturn a precise, evidence-backed finding. If the answer cannot be located, set found=false rather than guessing. Mark a claim loadBearing only if a plan built on it would change were the claim false.`,
-    { agentType: item.agentType, model: 'haiku', label: `research:${item.label}`, phase: 'Research', schema: FINDING_SCHEMA }
-  ),
+  item => {
+    // config/agents.json uses snake_case ids; rendered Claude Code names are kebab-case
+    const agentType = (item.agentType || 'codebase-researcher').replace(/_/g, '-')
+    return agent(
+      `${item.q}\n\nReturn a precise, evidence-backed finding. If the answer cannot be located, set found=false rather than guessing. Mark a claim loadBearing only if a plan built on it would change were the claim false.`,
+      { agentType, model: 'haiku', label: `research:${item.label}`, phase: 'Research', schema: FINDING_SCHEMA }
+    )
+  },
   (finding, item) => {
     if (!finding || !finding.found) return { item, finding, verified: [], refuted: [], contested: [] }
     const loadBearing = finding.claims.filter(c => c.loadBearing)
+    // config/agents.json uses snake_case ids; rendered Claude Code names are kebab-case
+    const agentType = (item.agentType || 'codebase-researcher').replace(/_/g, '-')
     return parallel(loadBearing.flatMap(c => [0, 1].map(n => () =>
       agent(
         `Try to REFUTE this claim against the actual codebase/docs: "${c.claim}"\nEvidence offered: ${c.evidence}\nDefault to refuted=true if you cannot confirm it with concrete evidence.`,
-        { agentType: item.agentType, model: 'sonnet', label: `verify:${item.label}#${n}`, phase: 'Verify', schema: VERDICT_SCHEMA }
+        { agentType, model: 'sonnet', label: `verify:${item.label}#${n}`, phase: 'Verify', schema: VERDICT_SCHEMA }
       ).then(v => ({ claim: c, verdict: v }))
     ))).then(checks => {
       // group the 2 votes per claim
