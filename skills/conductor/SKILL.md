@@ -12,6 +12,7 @@ Do not create `PLAN.md`, `TASKS.md`, `REVIEW.md`, `ACTION_ITEMS.md`, per-task Ma
 Read these references before acting:
 
 - [MCP lifecycle](references/mcp-lifecycle.md) — public surfaces, strict vocabularies, leases, and ownership.
+- [Backlog triage](references/backlog-triage.md) — the research-phase sweep of open and deferred action items, the aging rule, and batch-citation hygiene.
 - [Host capabilities](references/host-capabilities.md) — portable operations used for dispatch, waiting, filesystem access, verification, and git.
 - [Recovery](references/recovery.md) — Zabin-first reconciliation with the minimal Phase 1 checkpoint.
 - [Payload examples](references/payload-examples.md) — concrete MCP argument objects.
