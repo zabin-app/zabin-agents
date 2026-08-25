@@ -47,6 +47,26 @@ Question label, repository, tier, timeout, dispatch id, and schema references be
 }
 ```
 
+## Retrieval before dispatch
+
+Before building `role_input` for a question, run 1-2 `search_context`
+queries scoped to that question — e.g. `search_context(project_id, "session
+ownership token refresh")` — to check for prior art: a research artifact,
+review round, or task that already answers it. This is two-stage: a snippet
+plus `source_type`/`source_id` first, a full fetch (`get_task`,
+`get_project_doc`, `get_plan`, or the artifact's own round) only for the
+specific hit that looks load-bearing. A keyword-only note in the response
+means the semantic index was unavailable and the hits are BM25-only — still
+usable, record it in the finding's `caveats`. Fold anything load-bearing
+found this way into the question's `context` for the dispatched role rather
+than re-researching it from nothing.
+
+This narrows which questions still need a fresh dispatch; it does not
+replace enumeration (list the affected surface with the paged list tools,
+not with search hits) and it does not replace the researcher's own reads
+once scope narrows to a specific file, module, or the document the plan is
+about to act on — those are read in full, never from a snippet.
+
 ## Input schema
 
 Validate the program input before dispatch:

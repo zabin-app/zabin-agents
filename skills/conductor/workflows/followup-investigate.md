@@ -23,6 +23,25 @@ Every registered dispatch uses the exact role input illustrated below.
 
 Only `objective`, `scope`, and optional `context` enter `role_input`, matching `codebase_researcher.input_schema`. Role, `balanced` tier, `working_directory`, timeout, issue/action-item correlation, and the expected registered output schema are host-envelope metadata.
 
+## Retrieval before dispatch
+
+Before building an issue's `role_input`, run 1-2 `search_context` queries
+scoped to the finding — e.g. `search_context(project_id, "action item
+act_042 clipboard OSC 52 duplicate write")` — to check whether this finding,
+or one like it, was already diagnosed: a prior research artifact, a
+`contested` or `not_reproduced` diagnosis from an earlier round, or a
+related action item. This is two-stage: a snippet plus
+`source_type`/`source_id` first, a full fetch (`get_task`, the artifact, or
+the action item's own round) only for the hit that matches. A keyword-only
+note in the response means BM25-only degradation — still usable, mention it
+in the diagnosis's evidence.
+
+This locates prior art before dispatch; it does not replace enumeration (the
+open/deferred action-item list still comes from the listing surface, not
+from search hits) and it does not replace the investigator's own
+reproduction — which reads the actual code the finding names — nor the full
+`get_task`/action-item read for the issue currently being diagnosed.
+
 ## Input schema
 
 ```json

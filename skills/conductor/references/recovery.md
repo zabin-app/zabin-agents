@@ -7,7 +7,22 @@ The executable contract is [recovery-checkpoint.schema.json](../../../schemas/re
 ## Recovery order
 
 1. Pin the explicit `project_id` and rediscover required MCP capabilities.
-2. Read Zabin first: `get_pickup_context`, `get_pipeline_state`, paged `list_tasks`, paged `list_workspaces`, relevant `get_plan` pages, and `get_task` for active cards.
+2. Locate before you read. When the exact task, plan, phase, or wave id is
+   not yet pinned, run 1-2 `search_context` queries scoped to what you are
+   recovering — e.g. `search_context(project_id, "task tsk_... OSC 52
+   clipboard recovery")` — to find the completion summary, research
+   artifact, or review round that mentions it. This is two-stage: a snippet
+   plus `source_type`/`source_id` first, a full read of that specific hit
+   only if it looks load-bearing. A keyword-only note in the response means
+   BM25-only degradation — still usable, note it in the reconciliation.
+   Retrieval only locates candidates; it never enumerates the live board (the
+   paged list tools own that) and it never substitutes for the authoritative
+   `get_task` read of the card being recovered. Then read Zabin first for the
+   authoritative record: `get_pickup_context`, `get_pipeline_state`, paged
+   `list_tasks`, paged `list_workspaces`, relevant `get_plan` pages, and
+   `get_task` for active cards. Resume decisions, lease ownership, verdicts,
+   and gates are decided only from these authoritative reads, never from a
+   search snippet.
 3. Inspect git with host read capabilities: primary branch/SHA/status, worktree list, branch heads, and commit ancestry. Do not mutate yet.
 4. Construct the complete checkpoint key from known ids and SHA.
 5. Load and validate the local checkpoint with `zabctl agents recovery --operation load` and `--operation validate`.

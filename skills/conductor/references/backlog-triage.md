@@ -5,8 +5,21 @@ plan already has findings to draw on. It is pipeline discipline, not project
 state: the ledger of open and deferred action items is only useful if every
 plan actually reads it.
 
-1. **Research-phase sweep.** Enumerate open and deferred action items through
-   the executable listing surface (`zabctl get actionitems --project <id>
+1. **Research-phase sweep.** Open with 1-2 `search_context` queries scoped to
+   the plan's subject — e.g. `search_context(project_id, "OSC 52 clipboard
+   write handling")` — before any list paging. This is the dedup pass: has
+   this already been filed or discussed, what deferred items relate, what
+   research artifact already covers it. Each hit's `source_type` and
+   `source_id` (a `task`, `project_document`, `review_round`, `action_item`,
+   or `research_artifact`) name the targeted follow-up fetch —
+   `get_task`, `get_project_doc`, or the action item's own round — snippet
+   first, full fetch only for the specific hit that looks relevant
+   (two-stage). A keyword-only note in the response means the semantic index
+   was unavailable and the hits are BM25-only — still usable, say so in the
+   plan's findings.
+
+   Then enumerate open and deferred action items through the executable
+   listing surface (`zabctl get actionitems --project <id>
    --status open` and `--status deferred` on hosts that carry `zabctl`; note
    that no MCP tool enumerates action items — `get_pipeline_state` returns an
    open-only top-10 and `search_context` is retrieval, not enumeration). The
@@ -19,6 +32,12 @@ plan actually reads it.
    acceptance criterion citing its `action_item_id`), or re-defer it via
    `update_action_item` with a dated `resolution_note` explaining why it
    stays out of scope.
+
+   Retrieval-first applies to this dedup/prior-art pass only: once a
+   specific action item or card is the thing being folded into the plan or
+   implemented, read it in full (`get_task`, `get_project_doc`, the round)
+   rather than trusting the 800-char snippet — the search index is
+   supporting context, never the record itself.
 
 2. **Aging rule.** At each plan's State 8 close-out, list deferred items whose
    `created_at` predates the last 3 *completed* plans — this is a CANDIDATE
