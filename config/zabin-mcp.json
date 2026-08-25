@@ -58,6 +58,7 @@
         {"name": "delete_attachment", "group": "attachment", "risk_class": "destructive", "approval": "human_gate", "mutates_state": true},
         {"name": "delete_project_doc", "group": "document", "risk_class": "destructive", "approval": "human_gate", "mutates_state": true},
         {"name": "finalize_plan", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "finish_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_graph_summary", "group": "graph", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_overlap_report", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
@@ -93,6 +94,7 @@
         {"name": "set_layer_tour", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "set_plan_section", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "start_analysis_run", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "start_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_action_item", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "update_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "update_task_status", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
@@ -142,6 +144,7 @@
       "tools": [
         {"name": "attach_file", "group": "attachment", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "claim_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
+        {"name": "finish_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "get_attachment", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_plan", "group": "plan", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_project_doc", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
@@ -157,6 +160,7 @@
         {"name": "release_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "renew_task_lease", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "search_context", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
+        {"name": "start_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_task_status", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_worktree_status", "group": "git", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true}
       ],
