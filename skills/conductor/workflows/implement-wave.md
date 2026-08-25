@@ -135,17 +135,14 @@ After registered-schema validation, accept only the lowercase contract values `d
 
 For each task, build the exact four-field `implementor` role input above, validate it against `config/agents.json`, and call `spawn-role(envelope)`. Host metadata supplies exact agent/worktree/branch/base identity, TTL, and verification/doc-routing context without changing the role input. Inside its one worktree, the implementor performs this order using only the worker MCP surface:
 
-1. `claim_task` with `project_id`, `task_id`, exact `agent_name`, and `lease_ttl_secs`; verify the returned owner and TTL.
-2. `get_task`; stop if task identity, authoritative description, dependencies, or `write_files` differ from the dispatch boundary.
-3. `register_worktree` with task, agent, path, branch, `base_branch`, and `base_sha`; verify or retain `worktree_id`.
-4. Write task status `queued`, then `executing`, under the same `agent_name`.
-5. Post bounded progress messages and implement only the authoritative scope. The worker must not create, switch, merge, rebase, remove, or clean worktrees, and must not spawn agents.
-6. Renew the explicit TTL immediately before long verification. Run the repository-grounded verification commands in the assigned worktree.
-7. Before committing, require every changed path to be present in the authoritative `write_files` set. Any undeclared lockfile, generated file, task ledger, re-export, import, or other path is a containment failure: preserve the evidence and stop rather than staging or committing it. Commit only declared paths using `git.commit`. Do not edit or append a local task ledger unless it is itself declared; Zabin is the task record.
-8. Call `record_commits` with the source commit SHA and registered `worktree_id`.
-9. Call `update_worktree_status(..., status: "idle")`; the commit ledger carries the current SHA unless the discovered schema has a dedicated field.
-10. Write task status `in_review`, then call `record_task_summary` with files, verification, commit, scope containment, and documentation-routing needs.
-11. Return a schema-valid implementor result while retaining the lease. Never write `validated` or `completed`, and never call `release_task`.
+1. `start_task` with `project_id`, `task_id`, exact `agent_name`, `lease_ttl_secs`, `branch`, `base_branch`, and `base_sha`. This composite claims the lease, fetches the full card, registers the worktree, and writes status `executing` in one call — there is no separate `queued` hop. Verify the returned owner and TTL (resize with `renew_task_lease` if the grant is lower than requested); verify the returned card's identity, authoritative description, dependencies, and `write_files` against the dispatch boundary, stopping on disagreement; retain `worktree_id` from the response.
+2. Post bounded progress messages and implement only the authoritative scope. The worker must not create, switch, merge, rebase, remove, or clean worktrees, and must not spawn agents.
+3. Renew the explicit TTL immediately before long verification. Run the repository-grounded verification commands in the assigned worktree.
+4. Before committing, require every changed path to be present in the authoritative `write_files` set. Any undeclared lockfile, generated file, task ledger, re-export, import, or other path is a containment failure: preserve the evidence and stop rather than staging or committing it. Commit only declared paths using `git.commit`. Do not edit or append a local task ledger unless it is itself declared; Zabin is the task record.
+5. `finish_task` with `project_id`, `task_id`, exact `agent_name`, `commits`, `summary`, and `worktree_sha`. This composite records the source commits, sets the worktree `idle`, writes task status `in_review`, and records the task summary in one call; the lease is retained.
+6. Return a schema-valid implementor result while retaining the lease. Never write `validated` or `completed`, and never call `release_task`.
+
+Each composite reports `steps_committed` — which of its underlying steps actually landed — and stops at the first failing step rather than rolling back what already committed. On a partial `steps_committed`, do not retry the composite; finish the remaining steps with the matching singular tool under the still-held lease (for example, a `start_task` that claimed but did not register the worktree is completed with a direct `register_worktree` call, then `update_task_status` to `executing`; a `finish_task` that recorded commits but not the summary is completed with a direct `record_task_summary` call, then `update_worktree_status` and `update_task_status` for whichever step is still unmarked). `claim_task`, `get_task`, `register_worktree`, `update_task_status`, `record_commits`, `update_worktree_status`, and `record_task_summary` all remain individually callable for exactly this repair path.
 
 If implementation or verification fails, the worker still preserves and commits useful scoped work when required by the implementor contract, reports `status: "failed"`, marks the worktree idle if safe, writes `in_review` only when a reviewable commit and summary exist, and retains the lease for conductor recovery. It does not invent a lifecycle transition to escape failure.
 
@@ -219,4 +216,4 @@ The conductor owns worktree topology. The worker owns edits and its source commi
 
 ## MCP persistence handoff
 
-Workers persist claim, task status through `in_review`, progress, workspace registration/idle state, source commits, and summary on the worker surface. The conductor persists gate results and task verdicts; on pass it writes `validated`, merges, records merged commit mappings and workspace transitions, runs integration gates, then writes `completed` and releases. The worker lease remains held across this handoff.
+Workers persist claim, task status through `in_review`, progress, workspace registration/idle state, source commits, and summary on the worker surface — driven by the `start_task`/`finish_task` composites, with the singular tools as the partial-failure repair path. The conductor persists gate results and task verdicts; on pass it writes `validated`, merges, records merged commit mappings and workspace transitions, runs integration gates, then writes `completed` and releases. The worker lease remains held across this handoff.

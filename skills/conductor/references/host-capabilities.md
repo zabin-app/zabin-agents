@@ -47,7 +47,7 @@ Every bounded assignment includes enough identity to audit and contain it:
 }
 ```
 
-The implementation assignment does not contain a copied task specification. The worker fetches `description`, `write_files`, relationships, and subtasks with `get_task` and stops if identity or scope differs.
+The implementation assignment does not contain a copied task specification. The worker's `start_task` composite call folds the claim, the full card fetch, worktree registration, and the status write to `executing` into one round trip and returns the full card — `description`, `write_files`, relationships, and subtasks included; the worker verifies identity and scope from that response and stops if it differs. `get_task` remains available standalone as the repair path when a composite reports a partial commitment.
 
 Research, review, validation, and integration assignments use their registered role schemas from `config/agents.json`. Select `fast`, `balanced`, or `deep` from `config/model-tiers.json`; the host resolves the tier to an available model. Do not embed a vendor or concrete model identifier in pipeline instructions.
 
