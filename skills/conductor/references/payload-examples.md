@@ -32,9 +32,12 @@ Each JSON object below is the `arguments` value for the named public MCP tool. R
 {
   "project_id": "prj_example",
   "plan_id": "fplan_example",
-  "max_phases": 25
+  "max_phases": 25,
+  "detail": "summary"
 }
 ```
+
+`detail` defaults to `full`; pass `"summary"` for routine orientation reads and reserve `"full"` for phase boundaries and review synthesis, where the trimmed fields (gate command/recorded_by/timestamp, review summary text, wave label/base_sha) are load-bearing.
 
 `list_tasks`
 
@@ -48,7 +51,20 @@ Each JSON object below is the `arguments` value for the named public MCP tool. R
 }
 ```
 
-Follow `next_offset` until absent. Apply the same paging discipline to `list_workspaces`, `get_plan`, and other paged reads.
+Filter `status` to the live states this run needs (`ready`, `executing`, `in_review`, `needs_rework`, `validated`); follow `next_offset` within that filter until absent. Do not page an unfiltered `list_tasks` to completion at orient — that walks the project's entire completed history for no decision this state needs.
+
+`list_workspaces`
+
+```json
+{
+  "project_id": "prj_example",
+  "status": "active",
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Filter to `active`/`idle` for routine orientation; widen only when reconciling a specific gap. Apply the same filtered-paging discipline to `get_plan` and other paged reads.
 
 ## Research
 
@@ -142,30 +158,16 @@ Supply exactly one selector: `task_ids` or `board_id`.
 }
 ```
 
-## Worker claim and authoritative spec read
+## Worker start: claim, spec, worktree, executing
 
-`claim_task` on the worker surface
-
-```json
-{
-  "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "agent_name": "implementor@runner/task-05",
-  "lease_ttl_secs": 7200
-}
-```
-
-Verify the response returns the same agent and requested `lease_ttl_seconds`. Then call `get_task` and compare its `write_files` to the assignment boundary.
-
-## Worker worktree registration
-
-`register_worktree`
+`start_task` — the instructed default, composing `claim_task` + `get_task` + `register_worktree` + `update_task_status(executing)` in one call, folding the `queued` hop into the claim:
 
 ```json
 {
   "project_id": "prj_example",
   "task_id": "tsk_rotation",
   "agent_name": "implementor@runner/task-05",
+  "lease_ttl_secs": 7200,
   "path": "/srv/worktrees/task-05",
   "branch": "work/task-05",
   "base_branch": "feature/refresh-rotation",
@@ -173,24 +175,9 @@ Verify the response returns the same agent and requested `lease_ttl_seconds`. Th
 }
 ```
 
-For a worktree on another machine, include `host` and `base_sha`. Retain the returned `worktree_id`.
+Verify the response's granted `lease_ttl_seconds` matches the request, its embedded `get_task` spec's `write_files` matches the assignment boundary, and its embedded `register_worktree` step succeeded — each is a distinct failure mode, not one pass/fail bit. If the granted TTL is lower than requested, call `renew_task_lease` immediately **with** `lease_ttl_secs`. The individual atomic tools (`claim_task`, `get_task`, `register_worktree`, `update_task_status`) remain callable directly for recovery from a partial composite failure or for a host that has not adopted the composite.
 
-## Worker status and narration
-
-`update_task_status` to queued
-
-```json
-{
-  "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "agent_name": "implementor@runner/task-05",
-  "status": "queued"
-}
-```
-
-Repeat with `status:"executing"`, then later `status:"in_review"`.
-
-`post_progress_message`
+## Worker narration and mid-task renewal
 
 ```json
 {
@@ -212,88 +199,99 @@ Repeat with `status:"executing"`, then later `status:"in_review"`.
 }
 ```
 
-## Worker commit and idle worktree record
+## Worker finish: commits, summary, idle worktree, in_review
 
-`record_commits`
+`finish_task` — the instructed default, composing `record_commits` + `record_task_summary` + `update_worktree_status(idle)` + `update_task_status(in_review)` in one call:
 
 ```json
 {
   "project_id": "prj_example",
   "task_id": "tsk_rotation",
+  "agent_name": "implementor@runner/task-05",
   "worktree_id": "wkt_example",
   "commits": [
     {
       "sha": "b6be319eaa4a74903cfb5ddf52151be0fb93d256",
       "subject": "rotation: consume refresh tokens atomically"
     }
-  ]
-}
-```
-
-Mark the completed worktree idle before handoff:
-
-```json
-{
-  "project_id": "prj_example",
-  "worktree_id": "wkt_example",
-  "agent_name": "implementor@runner/task-05",
-  "status": "idle"
-}
-```
-
-Call `update_worktree_status`. The current surface preserves the SHA through `record_commits`; if a future discovered schema adds a current-SHA field, populate it from `git.inspect`.
-
-## Worker summary and handoff
-
-After writing `in_review`, call `record_task_summary`:
-
-```json
-{
-  "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "agent_name": "implementor@runner/task-05",
+  ],
   "summary": "Implemented atomic refresh-token rotation in the two declared files. Focused tests and lint passed. Source commit b6be319eaa4a74903cfb5ddf52151be0fb93d256. No out-of-scope writes; documentation update needed for replay behavior."
 }
 ```
 
-The worker retains the lease and returns. It does not write `validated` or `completed` and does not release.
+The current surface preserves the worktree's SHA through the embedded `record_commits`; if a future discovered schema adds a current-SHA field, populate it from `git.inspect`. The worker retains the lease and returns. It does not write `validated` or `completed` and does not release. The individual atomic tools (`record_commits`, `record_task_summary`, `update_worktree_status`, `update_task_status`) remain callable directly for recovery from a partial composite failure.
 
 ## Conductor task verdict and validation hop
 
-`record_gate_result`
+`record_gate_results` — the instructed default for a wave's gate set, up to 50 entries per call:
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "name": "task-focused-tests",
-  "status": "passed",
-  "detail": "24 tests passed; branch containment and write scope verified."
+  "entries": [
+    {
+      "task_id": "tsk_rotation",
+      "name": "task-focused-tests",
+      "status": "passed",
+      "detail": "24 tests passed; branch containment and write scope verified."
+    },
+    {
+      "task_id": "tsk_metrics",
+      "name": "task-focused-tests",
+      "status": "passed",
+      "detail": "9 tests passed; no out-of-scope writes."
+    }
+  ]
 }
 ```
 
-`record_task_verdict`
+The response reports one outcome per entry, by index, in `results`: either `{ok: true, id, status, updated_at}` or `{ok: false, error_code, field, correction_hint}`. Check every index — one entry's failure does not stop or invalidate the rest, so a batch response is not a single success. Use singular `record_gate_result` only for a one-off gate outside a wave.
+
+`record_task_verdicts` — same batching, for a wave's verdicts:
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "round": 0,
-  "verdict": "pass",
-  "detail": "All acceptance criteria met."
+  "entries": [
+    {
+      "task_id": "tsk_rotation",
+      "round": 0,
+      "verdict": "pass",
+      "detail": "All acceptance criteria met."
+    },
+    {
+      "task_id": "tsk_metrics",
+      "round": 0,
+      "verdict": "pass",
+      "detail": "All acceptance criteria met."
+    }
+  ]
 }
 ```
 
-`update_task_status` before merge
+Check each entry's `results[index]` before treating any task as validated. Use singular `record_task_verdict` only for a one-off.
+
+`update_task_statuses` to `validated` before merge — batched when multiple cards move together, otherwise `update_task_status`:
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "agent_name": "implementor@runner/task-05",
-  "status": "validated"
+  "entries": [
+    {
+      "task_id": "tsk_rotation",
+      "agent_name": "implementor@runner/task-05",
+      "status": "validated"
+    },
+    {
+      "task_id": "tsk_metrics",
+      "agent_name": "implementor@runner/task-06",
+      "status": "validated"
+    }
+  ]
 }
 ```
+
+Again, check every entry's outcome in `results` by index before merging that task's branch.
 
 ## Conductor merged commit mapping
 
@@ -330,18 +328,27 @@ Then transition the worktree through `merged` and `removed` as the corresponding
 }
 ```
 
-`update_task_status` after every required gate passes
+`update_task_statuses` to `completed` after every required gate passes — batched when the wave completes multiple cards together, otherwise `update_task_status`:
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_rotation",
-  "agent_name": "implementor@runner/task-05",
-  "status": "completed"
+  "entries": [
+    {
+      "task_id": "tsk_rotation",
+      "agent_name": "implementor@runner/task-05",
+      "status": "completed"
+    },
+    {
+      "task_id": "tsk_metrics",
+      "agent_name": "implementor@runner/task-06",
+      "status": "completed"
+    }
+  ]
 }
 ```
 
-Inspect `blocking_task_ids`, then call `release_task`:
+The batched ack above is minimal — `{ok, index, id, status, updated_at}` per entry, no `column_move_skipped` or `blocking_task_ids` — so when the blocker signal matters, follow up with the singular `update_task_status` (which reports it when present) or a `get_task`/`get_pipeline_state` read before calling `release_task`:
 
 ```json
 {

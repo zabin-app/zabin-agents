@@ -52,33 +52,56 @@ If the synthesized review is too detailed for the round summary, encode the stru
 
 Call `attach_file`. Do not put credentials, tokens, session ids, or unredacted command environments in an attachment.
 
-## File each confirmed finding once
+## File a round's confirmed findings, batched
 
 ```json
 {
   "project_id": "prj_example",
-  "severity": "critical",
-  "title": "Replay telemetry exposes token material",
-  "body": "The replay log includes the first eight characters of the presented refresh token. Log only the stable token record id.",
-  "file_ref": "src/domain/session.rs:188",
-  "review_round_id": "rvr_example",
-  "task_id": "tsk_example"
+  "entries": [
+    {
+      "severity": "critical",
+      "title": "Replay telemetry exposes token material",
+      "body": "The replay log includes the first eight characters of the presented refresh token. Log only the stable token record id.",
+      "file_ref": "src/domain/session.rs:188",
+      "review_round_id": "rvr_example",
+      "task_id": "tsk_example"
+    },
+    {
+      "severity": "minor",
+      "title": "Replay metric name conflates rejection with expiration",
+      "body": "The metric name does not distinguish replay rejection from expiration, which will make the next incident harder to triage. Rename or split the metric.",
+      "file_ref": "src/telemetry/session_metrics.rs:24",
+      "review_round_id": "rvr_example"
+    }
+  ]
 }
 ```
 
-Call `add_action_item` once per finding, including Minor findings. Do not combine unrelated findings in one title and do not add the same finding again in a later round.
+Call `add_action_items` — the instructed default for a round's worth of findings, including Minor ones — once per review round; check each entry's outcome in the response's `results` individually, by index, before treating any finding as filed. Use singular `add_action_item` only for a one-off finding outside a round. Do not add the same finding again in a later round.
+
+**Title rule:** keep `title` to a short name for the finding — 120 characters or fewer, the same point `get_pipeline_state`'s summary view truncates at — and put every other detail in `body`: the evidence, the reasoning, the file reference, the suggested fix. A title is not a paragraph; do not combine unrelated findings into one title, and do not let a title absorb what belongs in `body`. Compare the two findings above: `"Replay telemetry exposes token material"` names the finding in seven words, while every fact that supports it — which bytes leak, where, what to log instead — lives in `body`. A title like `"Replay telemetry logs the first eight characters of the presented refresh token instead of the stable token record id, which could let an attacker with log access reconstruct enough of a token to replay it"` is a body pasted where a title belongs; it would also be silently cut at 120 characters in a summary read, losing exactly the part that made it specific.
 
 ## Persist implementation and integration gates
 
-Task-scoped verification:
+A wave's task-scoped verification, batched:
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_example",
-  "name": "task-unit-tests",
-  "status": "passed",
-  "detail": "24 session tests passed; 0 failed."
+  "entries": [
+    {
+      "task_id": "tsk_example",
+      "name": "task-unit-tests",
+      "status": "passed",
+      "detail": "24 session tests passed; 0 failed."
+    },
+    {
+      "task_id": "tsk_metrics",
+      "name": "task-unit-tests",
+      "status": "passed",
+      "detail": "9 metrics tests passed; 0 failed."
+    }
+  ]
 }
 ```
 
@@ -87,28 +110,42 @@ Wave integration verification uses phase scope and a unique wave-qualified name:
 ```json
 {
   "project_id": "prj_example",
-  "phase_id": "pph_example",
-  "name": "wave-2-integration-tests",
-  "status": "passed",
-  "detail": "Full suite passed after merging wave 2."
+  "entries": [
+    {
+      "phase_id": "pph_example",
+      "name": "wave-2-integration-tests",
+      "status": "passed",
+      "detail": "Full suite passed after merging wave 2."
+    }
+  ]
 }
 ```
 
-Call `record_gate_result`. Supply exactly one of `task_id` and `phase_id`. Gate records upsert by scope and name, so reusing a prior wave's name destroys history.
+Call `record_gate_results` — the instructed default for a wave's gate set; check each entry's outcome in `results` individually, by index. Use singular `record_gate_result` only for a one-off gate. Supply exactly one of `task_id` and `phase_id` per entry. Gate records upsert by scope and name, so reusing a prior wave's name destroys history — the same `(scope, name)` twice in one batch upserts twice, later entry wins.
 
-## Record a worker verdict
+## Record a wave's worker verdicts
 
 ```json
 {
   "project_id": "prj_example",
-  "task_id": "tsk_example",
-  "round": 0,
-  "verdict": "pass",
-  "detail": "All acceptance criteria met; write scope and branch containment verified."
+  "entries": [
+    {
+      "task_id": "tsk_example",
+      "round": 0,
+      "verdict": "pass",
+      "detail": "All acceptance criteria met; write scope and branch containment verified."
+    },
+    {
+      "task_id": "tsk_metrics",
+      "round": 0,
+      "verdict": "pass",
+      "detail": "All acceptance criteria met; write scope and branch containment verified."
+    }
+  ]
 }
 ```
 
-Call `record_task_verdict`. A `pass` is immediately followed by the conductor's `validated` status write under the worker's lease name, before merge. `concern` or `fail` stays unmerged and follows `needs_rework`.
+Call `record_task_verdicts` — the instructed default for a wave; check each entry's outcome individually before treating any task as verdicted. Use singular `record_task_verdict` for a one-off. A `pass` is immediately followed by the conductor's `validated` status write under the worker's lease name, before merge. `concern` or `fail` stays unmerged and follows `needs_rework`.
 
 ## Record convergence rounds
 
