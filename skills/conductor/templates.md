@@ -131,7 +131,18 @@ Call `add_phase_tasks`. Reject a draft that lacks a self-contained description o
 }
 ```
 
-Call `finalize_plan`, pause for human approval, then confirm `approved_by`, `approved_at`, and the current revision with `get_plan`.
+Call `finalize_plan`, pause for human approval, then confirm approval with the minimal approval-check read:
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "sections": [],
+  "include_task_drafts": false
+}
+```
+
+Call `get_plan` with both fields set this way to shrink the response to `approved_by`, `approved_at`, and the current revision — no prose sections, no phase or task-draft payload. Require both `approved_by` and `approved_at` set before proceeding.
 
 ## Materialize the approved plan
 
@@ -157,7 +168,7 @@ For every intended card, call `get_task`:
 }
 ```
 
-Confirm description, write scope, status, relationships, and subtasks from the response. Page `list_tasks` and `list_workspaces` before scheduling.
+Confirm description, write scope, status, relationships, and subtasks from the response. Page `list_tasks` filtered to `ready` (the only dispatchable status) and `list_workspaces` filtered to `active`/`idle` before scheduling — not an unfiltered walk through the whole board.
 
 ## Ask the server for overlap
 

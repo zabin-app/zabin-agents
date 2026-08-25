@@ -22,7 +22,7 @@ Read these references before acting:
 ## Invariants
 
 1. Require an explicit `project_id` before any project-scoped call. `resolve_project` may discover it from an absolute repository path, but surface the returned id and pin it for the run. Never infer project identity from a session, branch, worktree, or child id.
-2. Discover the MCP surface with `get_server_info` before mutation. Compare the required operations for the chosen path with the returned public tool names. Stop if a required capability is missing.
+2. Discover the MCP surface with `get_server_info` once per session — cache the returned tool list and re-check only after a call fails in a way that suggests the surface drifted, never on a fixed schedule — before mutation. Compare the required operations for the chosen path against the cached names. Stop if a required capability is missing.
 3. Invoke tools by their public names. Qualification is an adapter concern; pipeline instructions never contain transport- or host-qualified names.
 4. Read authoritative state before deciding: `get_pickup_context`, `get_pipeline_state`, paged `list_tasks`, and paged `list_workspaces`. Retrieval search is supporting context, not a lifecycle ledger.
 5. Preserve every human gate. Plan approval is performed by a human in a Zabin interface; no tool or agent approves its own plan.
@@ -38,9 +38,9 @@ Read these references before acting:
 
 Inputs are the absolute repository path and explicit `project_id` (or permission to resolve that path to an id).
 
-1. Call `get_server_info {}` and require the operations used by this run. The canonical policy currently declares 52 conductor tools and a strict 17-tool worker subset; use the names returned at runtime and fail closed on missing requirements.
+1. Call `get_server_info {}` once per session and cache its tool list; require the operations used by this run against that cached list and fail closed on missing requirements. Do not hardcode a tool count in instructions — the served surface grows and shrinks independently of this document, so the runtime list from `get_server_info` is the only authoritative inventory. Re-check only after an error suggests the cached list has drifted, never on a fixed schedule.
 2. If identity must be resolved, call `resolve_project` with the absolute path. If not found, ask before `register_project`; registration is a durable human-gated mutation.
-3. Call `get_pickup_context`, `get_pipeline_state`, `list_tasks`, and `list_workspaces` with the pinned `project_id`, paging until complete.
+3. Call `get_pickup_context` and `get_pipeline_state {project_id, detail:"summary"}` with the pinned `project_id`; reserve `detail:"full"` for phase boundaries and review synthesis (State 6), where the full gate and review detail is load-bearing. Call `list_tasks` filtered to the live statuses this run needs — `ready`, `executing`, `in_review`, `needs_rework`, `validated`, as applicable — never an unfiltered page walk through completed history. Call `list_workspaces` filtered to `active`/`idle` unless reconciling a specific gap, in which case widen the filter only as far as the gap requires.
 4. If resuming, follow [Recovery](references/recovery.md). Never invent `PHASE_BASE`, a review round, task ownership, or a merge mapping.
 5. Inspect the project documentation policy and available architecture, development, standards, and review-focus documents. Missing project docs are reported; do not hallucinate them.
 
@@ -51,6 +51,8 @@ Classify the request as feature, bug, refactor, or research-only. A truly bounde
 Enumerate concrete questions and choose registered roles by capability, such as codebase research, external research, or history research. Use the host's `agent.dispatch` and `agent.wait` operations for independent bounded assignments. Agents return evidence; they do not persist pipeline state.
 
 For three or more questions, an unknown affected area, or load-bearing assumptions, run the research-sweep program. For a large or risky plan, run the plan-verification program against each factual assumption and proposed write scope.
+
+For orientation, deduplication, and prior-art questions — has this already been discussed, does a research artifact or action item already cover it — start with `search_context` rather than paging the ledger tools directly: it is a two-stage read, a snippet first and a full fetch only for the artifact you are about to act on. This narrows the field; it does not replace the authoritative reads in Invariant 4, and once a specific card or document is the thing being implemented against, read it in full rather than from a snippet.
 
 Immediately persist the synthesis with `record_research_artifact`. Store claim status (`verified`, `contested`, or `refuted`) and evidence in `body`; the tool has no separate claims field. Attach supporting files with `attach_file` when useful. Refuted, contested, and unverifiable claims belong in plan risks, not as facts in the plan body.
 
@@ -69,7 +71,7 @@ Every task draft must contain:
 
 Refuse to finalize if any task lacks a non-empty write scope or usable contract. The card description is the only implementation specification the worker will receive, and it is deliberately the **single copy** of that contract: a thin description now produces a thin implementation, because the dispatch carries no spec text to compensate with. A second copy pasted into a prompt is worse than none — it drifts from the card, and the worker cannot tell which one is current.
 
-After `finalize_plan` returns the ready state, present the plan id, revision, risks, phases, and task scopes, then pause for human approval. Wait using a host event capability when available; event delivery is only a wake-up signal. Always confirm approval with `get_plan` and require `approved_by` and `approved_at`. If unavailable, use an explicit human wait followed by low-frequency authoritative reads, never a busy loop.
+After `finalize_plan` returns the ready state, present the plan id, revision, risks, phases, and task scopes, then pause for human approval. Wait using a host event capability when available; event delivery is only a wake-up signal. Always confirm approval with the minimal approval-check read — `get_plan {plan_id, sections: [], include_task_drafts: false}`, which returns `approved_by`, `approved_at`, and the current revision without the full document — and require both fields set. If unavailable, use an explicit human wait followed by low-frequency authoritative reads, never a busy loop.
 
 Once approved, call `create_board` with the verified revision as `expected_revision`. A revision conflict requires a re-read and re-approval check. Re-read pipeline state to obtain durable plan, phase, board, and task ids.
 
@@ -106,15 +108,12 @@ Size worker TTL by task complexity: `simple` 1800, `moderate` 3600, `complex` 72
 
 Each implementor uses only the worker surface and performs, in order:
 
-1. `claim_task` under its exact `agent_name` and sized `lease_ttl_secs`, then verify the response's granted TTL. If it differs from the instructed value, call `renew_task_lease` immediately **with** `lease_ttl_secs` — an explicit TTL is what resizes a lease.
-2. `get_task`; stop if the returned spec or scope differs from dispatch identity.
-3. `register_worktree` with task, agent, branch, base branch, and base SHA.
-4. `update_task_status` to `queued`, then `executing`.
-5. Implement only `write_files`; narrate stages with `post_progress_message`, and renew immediately before every long verification stretch, not once it is overdue.
-6. Verify, commit, and call `record_commits`.
-7. Mark the worktree `idle` with its current SHA when supported.
-8. `update_task_status` to `in_review`, then `record_task_summary`.
-9. Retain the lease. Do not write `validated`/`completed` and do not release.
+1. `start_task` under its exact `agent_name` and sized `lease_ttl_secs`, with task, worktree path, branch, base branch, and base SHA — the composite of `claim_task` + `get_task` + `register_worktree` + `update_task_status(executing)`, folding the `queued` hop into the claim so the walk no longer writes it as a separate step. Verify the response's granted lease TTL and each embedded step's own outcome: stop if the returned spec or scope differs from dispatch identity, and if the granted TTL is lower than instructed, call `renew_task_lease` immediately **with** `lease_ttl_secs` — an explicit TTL is what resizes a lease, and this sizing and non-shrinking-renewal rule carries over verbatim from a bare `claim_task` into `start_task`'s TTL argument.
+2. Implement only `write_files`; narrate stages with `post_progress_message`, and renew immediately before every long verification stretch, not once it is overdue.
+3. Verify and commit, then call `finish_task` — the composite of `record_commits` + `record_task_summary` + `update_worktree_status(idle)` + `update_task_status(in_review)`.
+4. Retain the lease. Do not write `validated`/`completed` and do not release.
+
+The individual atomic tools (`claim_task`, `get_task`, `register_worktree`, `update_task_status`, `record_commits`, `update_worktree_status`, `renew_task_lease`) remain available for narration, mid-task renewal, and recovering from a partial composite failure — the composites are the instructed default call pattern, not a removal of the underlying tools.
 
 The walk ends at `in_review` with the lease still held, because a lease — never a release — is what carries a mid-walk card between actors: a card is claimable only while `ready`, the server refuses a mid-walk release, and `in_review`/`validated` are carved out of lease reaping so the handoff handle survives however long validation, merge, and gates take. Status writes and a bare `renew_task_lease` renew non-shrinkingly: they keep a longer deadline and otherwise guarantee only the service floor, so do the arithmetic before a long stage and resize explicitly when the stretch may outlive the remaining lease. Progress narration and the summary write do not renew at all.
 
@@ -124,12 +123,12 @@ For each returned worker:
 
 1. Reconcile card status, lease name, workspace row, commits, summary, and containment. Missing durable bookkeeping is a gap to repair explicitly, not a reason to guess. A worker's own containment report is a claim, not evidence: inspect the primary checkout's status and its diff against `WAVE_BASE` before merging, and never use cleanup, reset, checkout, or deletion to make an unexpected change disappear — compare it with the task's branch, preserve it, and pause if it diverges.
 2. Run a registered task validator over the exact base-to-branch diff and acceptance criteria.
-3. Persist every task check with `record_gate_result` and the validator result with `record_task_verdict`.
-4. On `pass`, write `validated` under the worker's `agent_name` before merging. On `concern` or `fail`, leave it unmerged, move it to `needs_rework`, mark the wave blocked, preserve its branch, and pause.
+3. Persist a wave's task checks with `record_gate_results` and its validator verdicts with `record_task_verdicts` — batched calls are the instructed default for a wave's worth of writes; check every entry's outcome in the response's `results` individually, by index, before proceeding — a batch response is not a single success. Use the singular `record_gate_result`/`record_task_verdict` only for a one-off write outside a wave.
+4. On `pass`, write `validated` under the worker's `agent_name` before merging — `update_task_statuses` when multiple cards move together in the same wave, `update_task_status` for one, again checking each entry's outcome individually. On `concern` or `fail`, leave it unmerged, move it to `needs_rework`, mark the wave blocked, preserve its branch, and pause.
 5. Merge passing branches in task order using main-loop git capabilities. Stop on conflict, record workspace conflict state, and preserve evidence.
 6. Replay commit mappings with the merged SHA and update workspace state through `merged` and `removed` as the git operations complete.
 7. Run the integration verifier over `WAVE_BASE..HEAD`. Persist task- or phase-scoped gate results under unique stable names such as `wave-<n>-integration-build`. Gate writes **upsert by (scope, name)**, so a reused name silently erases the previous wave's verdict: read the existing gate names from `get_pipeline_state` and derive the next ordinal rather than overwriting history.
-8. After all required integration gates pass, write `completed` under the worker's `agent_name`, inspect `blocking_task_ids`, then `release_task`. Mark the wave `merged`.
+8. After all required integration gates pass, write `completed` under the worker's `agent_name` — `update_task_statuses` when the wave completes multiple cards together, checking each entry's outcome individually. The batched ack is deliberately minimal (`id`/`status`/`updated_at` per entry only) and never carries `column_move_skipped`/`blocking_task_ids`; inspect that signal with the singular `update_task_status` per task, which reports it when present, or with a follow-up `get_task`/`get_pipeline_state` read. Then `release_task`. Mark the wave `merged`.
 
 An integration failure after merge moves `validated` to `needs_rework`, marks the wave blocked, preserves integrated commits, and fixes forward. Never silently roll back and never merge a branch with a failed task verdict.
 
@@ -150,7 +149,7 @@ After the final wave and documentation tasks pass, require a clean primary check
 Persist the synthesized result in the same turn:
 
 1. `record_review_round` at round `0`, scoped to the phase or plan, with normalized verdict, reviewed SHA, and summary. Review and implementation programs return their own spellings of verdict and status; map them onto the review-verdict and task-verdict enums before the call (Invariant 12). Round numbers are unique per scope — reusing one is refused, not merged.
-2. `add_action_item` once per confirmed finding, including Minor findings, linked to the review round and task when known.
+2. File a round's confirmed findings with `add_action_items` — the instructed default for a review round's worth of findings, including Minor ones, linked to the review round and task when known; check each entry's outcome in the response's `results` individually, by index. Use the singular `add_action_item` only for a one-off finding filed outside a round. Keep each title short enough to name the finding (120 characters is the system's own truncation point for a title, in `get_pipeline_state`'s summary view) and put every other detail — evidence, file references, remediation notes — in `body`; see [Action-item payloads](ACTION_ITEMS_TEMPLATE.md) for the rule and a worked example.
 3. Do not write a local review ledger. `get_pipeline_state` and the latest review round are authoritative.
 
 Use [Review payloads](review-templates.md) and [Action-item payloads](ACTION_ITEMS_TEMPLATE.md).
@@ -158,6 +157,8 @@ Use [Review payloads](review-templates.md) and [Action-item payloads](ACTION_ITE
 ## State 7 — Exact two-round follow-up ratchet
 
 Call `get_pipeline_state` before every decision and read the latest round for the exact scope.
+
+Before dispatching new follow-up investigation, check `search_context` for prior art on the same finding — snippet first, full fetch only for the diagnosis that matches — so a contested or not-reproduced result from an earlier round is not investigated again from nothing. Once a specific action item or artifact is the thing a follow-up round is acting on, read it in full.
 
 | Latest verdict | Action |
 |---|---|
