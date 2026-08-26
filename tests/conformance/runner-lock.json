@@ -120,7 +120,7 @@
       ],
       "expected_output": "1.45.0",
       "compatibility_lock": "adapters/goose/client-lock.json",
-      "compatibility_lock_sha256": "sha256:b2ec69d0ca33cf386826c87eb9437941a3d0bd8ba4fc0e34434acea2eea4d9d2",
+      "compatibility_lock_sha256": "sha256:c1b4a9a36c86f15d4dde326c2091b315a72883e6646fb473e650fa672edead50",
       "observed_binary_sha256": "sha256:9ef3ae45d819e41d1b7bcb1533033765d1e1876aba4a35ff0f6e722337512b3b",
       "official_artifact_verified": false,
       "official_artifact_sha256": null,

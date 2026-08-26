@@ -63,15 +63,15 @@
       "extension_name": "zabin-conductor",
       "normalized_extension_name": "zabin-conductor",
       "credential_environment": "ZABIN_MCP_TOKEN",
-      "expected_tool_count": 56,
-      "expected_inventory_sha256": "044c58ef3d10e6a2fdf31cd390020807a185959a3bd88f07f61390a35a68034a"
+      "expected_tool_count": 62,
+      "expected_inventory_sha256": "15b25139c4522ce4b088be7c9f84ca73f7373179c1de1cd0d1162421dcf4aa9d"
     },
     "worker": {
       "extension_name": "zabin-worker",
       "normalized_extension_name": "zabin-worker",
       "credential_environment": "ZABIN_MCP_WORKER_TOKEN",
-      "expected_tool_count": 19,
-      "expected_inventory_sha256": "261bcb1258850fd657c5807712bec7929b781a991888820dad818a1a628a4657"
+      "expected_tool_count": 21,
+      "expected_inventory_sha256": "c07e14d5fbd0b980b865ef205ab0a8f3b606676b5a66c4f4ab5271ca9b025cd7"
     }
   },
   "goose_semantics": {
