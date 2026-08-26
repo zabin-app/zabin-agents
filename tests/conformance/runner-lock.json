@@ -120,7 +120,7 @@
       ],
       "expected_output": "1.45.0",
       "compatibility_lock": "adapters/goose/client-lock.json",
-      "compatibility_lock_sha256": "sha256:748eac1ac94347bf6d77df41371e0e9538b897d1dc721e08b945513ae3646e7f",
+      "compatibility_lock_sha256": "sha256:b2ec69d0ca33cf386826c87eb9437941a3d0bd8ba4fc0e34434acea2eea4d9d2",
       "observed_binary_sha256": "sha256:9ef3ae45d819e41d1b7bcb1533033765d1e1876aba4a35ff0f6e722337512b3b",
       "official_artifact_verified": false,
       "official_artifact_sha256": null,
@@ -146,8 +146,8 @@
       "surface": "conductor",
       "version": "0.1.0",
       "protocol_version": "2025-11-25",
-      "tool_count": 52,
-      "inventory_sha256": "673957c5aaee47147b4383c065d3de2f093133598386cc97276e8feaff9aaea9"
+      "tool_count": 62,
+      "inventory_sha256": "15b25139c4522ce4b088be7c9f84ca73f7373179c1de1cd0d1162421dcf4aa9d"
     },
     "worker": {
       "url": "http://127.0.0.1:50053/mcp-worker",
@@ -157,8 +157,8 @@
       "surface": "worker",
       "version": "0.1.0",
       "protocol_version": "2025-11-25",
-      "tool_count": 17,
-      "inventory_sha256": "c13e61890aca3d463049bd0ac7df822a068e1fc5df679d32cd59e93942494929"
+      "tool_count": 21,
+      "inventory_sha256": "c07e14d5fbd0b980b865ef205ab0a8f3b606676b5a66c4f4ab5271ca9b025cd7"
     }
   },
   "timeouts_seconds": {
