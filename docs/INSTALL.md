@@ -67,6 +67,37 @@ zabctl agents install --contracts-root /path/to/zabin/.agents \
 `--contracts-root`; an explicit path is validated as given and is never
 silently substituted with a discovered one.
 
+### Selecting client targets
+
+`install` lays every *default* client adapter unless told otherwise. `--target`
+narrows the selection, comma-separated from `claude_code`, `codex`, `goose`
+(default `claude_code,codex`):
+
+```sh
+zabctl agents install --contracts-root /path/to/zabin/.agents \
+  --mode copy --destination /absolute/destination --target claude_code
+```
+
+An unknown target — and `codex_admin_requirements`, which is never installable —
+is refused (exit 2) naming the allowed set. A subset install never touches an
+unselected target's files or manifest entries (a later full-set `--mode check`
+still reports them clean), and the shared families — role instructions under
+`<destination>/agents`, portable skills under `<destination>/.agents/skills`,
+and the ownership manifest — install regardless of the selection.
+
+### Isolated, relocatable destinations
+
+Everything an install writes — adapters, shared families, and the ownership
+manifest at `<destination>/.zabin/installer-manifest.json` — lives under
+`--destination`, so an isolated tree such as
+`--destination ~/.claude-zabin --target claude_code` touches nothing in the
+operator's real `~/.claude`, `~/.codex`, `~/.agents`, or `~/.mcp.json`. Skill
+bridges (`.claude/skills/<name>`) are written as **relative** symlinks whenever
+the skills root sits under the destination (the default layout), so the
+installed tree keeps working if it is moved; a re-install over a pre-change
+absolute link migrates it to the relative form, and an explicitly-outside
+skills root keeps an absolute target.
+
 ## Quick start: one-command bootstrap
 
 `zabctl agents bootstrap` is for a machine that does **not** already have a
