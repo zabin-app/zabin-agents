@@ -99,6 +99,7 @@ Use the host capability contract in [Host capabilities](references/host-capabili
 - a parallel-safe set uses `git.create_worktree`, then one `agent.dispatch` per card and `agent.wait` for results;
 - overlapping or single-card work runs sequentially and must not race the working branch;
 - dispatch only the identity stub: `project_id`, `task_id`, exact `agent_name`, the worker surface to call, worktree path, branch, base branch/SHA, lease TTL, the lifecycle steps, and verification/doc-routing context. Do not paste a second copy of the spec — the card is the contract (State 2), and the stub carries only what the card cannot know.
+- the wave dispatch additionally carries each card's objective, acceptance criteria, and authoritative write scope for the program's **validator stage** — the task validator is forbidden the MCP surface and fails closed without explicit criteria, so the conductor, who verified the card in State 3, supplies them. This is validator input taken from the card at dispatch time, not a second spec copy: it never reaches the implementor, whose single spec remains the card fetched via `start_task`.
 
 Dispatch the stub as a role whose declared tool grant is the worker surface and nothing more (Invariant 11). Naming the worker surface in the stub text is an instruction; the grant is the boundary.
 

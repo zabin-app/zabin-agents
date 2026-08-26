@@ -11,13 +11,23 @@ export const meta = {
 // args: {
 //   workingBranch: string,          // branch the conductor is on; worktrees sync to it
 //   baseRef?: string,               // ref pre-created worktrees were cut from / validators diff against (default: workingBranch)
-//   tasks: [{ slug, complexity, agentType, content?, path?, worktreePath? }]
+//   tasks: [{ slug, complexity, agentType, content?, path?, worktreePath?,
+//             objective?, acceptanceCriteria?, writeFiles? }]
 // }
 //
 // PREFER `content`: the FULL text of the task file, read by the conductor and inlined here.
 // When `content` is present the implementor never sees a filesystem path outside its own
 // worktree, which is the only reliable way to stop agents writing into the user's primary
 // checkout. `path` is the legacy fallback and is strictly more dangerous — see PATH_WARNING.
+//
+// VALIDATION CONTRACT (`objective` string, `acceptanceCriteria` string[], `writeFiles` string[]):
+// the portable implement-wave contract requires the conductor to supply each card's objective,
+// acceptance criteria, and authoritative write scope so the VALIDATOR stage can be dispatched
+// with them — the task-validator role is forbidden the MCP surface and fails closed when
+// criteria are absent. These fields go ONLY into the validator prompt, never the implementor's
+// (under Zabin identity-stub dispatch the card fetched via start_task stays the implementor's
+// single spec). When `content` is an identity stub and these fields are missing, the validator
+// will correctly FAIL closed — a dispatch warning names those tasks up front.
 //
 // `worktreePath` (per task): absolute path of a worktree the CONDUCTOR pre-created (for repos
 // outside the session repo, e.g. an app repo the harness worktrees can't reach). When present,
@@ -41,6 +51,9 @@ const BASE_REF = A.baseRef || WORKING_BRANCH
 
 const legacy = TASKS.filter(t => !t.content && t.path).length
 if (legacy) log(`WARNING: ${legacy}/${TASKS.length} task(s) passed by path instead of inlined content — those implementors can see the primary checkout. Prefer args.tasks[].content.`)
+
+const unvalidatable = TASKS.filter(t => !(t.acceptanceCriteria && t.acceptanceCriteria.length) || !(t.writeFiles && t.writeFiles.length)).map(t => t.slug)
+if (unvalidatable.length) log(`WARNING: no acceptanceCriteria/writeFiles supplied for: ${unvalidatable.join(', ')} — the validator stage cannot see the Zabin card (no MCP) and will fail closed unless the inlined content itself carries the full spec. Pass args.tasks[].objective/acceptanceCriteria/writeFiles from the card the conductor verified.`)
 
 // Complexity → model tier (cheap-first-pass). Conductor may pre-resolve; we default safely.
 const MODEL_FOR = { low: 'haiku', medium: 'sonnet', high: 'opus' }
@@ -183,6 +196,15 @@ const results = await pipeline(
     const diffWhere = task.worktreePath
       ? `(the task's changes are committed in the pre-created worktree at ${task.worktreePath}, branched from ${BASE_REF}; run git ONLY via \`git -C ${task.worktreePath} …\`)`
       : `(the task's changes are on branch ${impl.branch}, based on ${WORKING_BRANCH})`
+    const contract = (task.acceptanceCriteria && task.acceptanceCriteria.length && task.writeFiles && task.writeFiles.length)
+      ? `OBJECTIVE: ${task.objective || `complete task ${task.slug} per its acceptance criteria`}
+
+ACCEPTANCE CRITERIA (conductor-supplied from the authoritative Zabin card — evaluate each one independently):
+${task.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+WRITE SCOPE (context.write_files — the ONLY paths the diff may touch):
+${task.writeFiles.map(f => `- ${f}`).join('\n')}`
+      : null
     return agent(
       `Validate the implementation of task \`${task.slug}\`.
 
@@ -191,11 +213,11 @@ ${diffWhere}
 
 You are READ-ONLY. Run only read-only git commands. Never run git clean/checkout/reset/stash/rm, and never modify, create, or delete any file — other checkouts of this repo exist on this machine and hold uncommitted user work.
 
-${task.content
-  ? `<task>\n${task.content}\n</task>`
+${contract ? `${contract}\n\n` : ''}${task.content
+  ? `${contract ? 'Dispatch identity context (supplementary — the criteria above are authoritative):\n' : ''}<task>\n${task.content}\n</task>`
   : `Task file: ${task.path} (read-only)`}
 
-Verify every acceptance criterion, check file scope against the task's declared write-files, and scan for obvious errors. Do NOT run builds or tests.
+Verify every acceptance criterion, check file scope against the ${contract ? 'write scope above' : "task's declared write-files"}, and scan for obvious errors. Do NOT run builds or tests.
 
 Note: the implementor was instructed NOT to append a Completion Summary to the task file — the conductor does that. Its absence is expected and is NOT a finding.`,
       { agentType: 'task-validator', model: 'haiku', label: `validate:${task.slug}`, phase: 'Validate', schema: VALIDATION_SCHEMA }

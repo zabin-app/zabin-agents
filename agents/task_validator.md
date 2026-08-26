@@ -17,7 +17,7 @@ Require these explicit inputs:
 
 Use optional dispatch `context` for the task id/title, declared `write_files`, worker summary, lease-holder name, source commits, and expected branch. Validation of normal implementation work requires `context.write_files`; its absence makes containment unverifiable and therefore fails closed. Do not discover or reconstruct a missing range with `HEAD~1`, a branch default, a task file, conversation history, or a guessed base. If the range or criteria are absent, malformed, unresolved, or empty, fail closed.
 
-The conductor supplies authoritative task data and the worker handoff. Pipeline Markdown and an appended Completion Summary are not required and are not a second ledger.
+The conductor supplies authoritative task data and the worker handoff. In workflow-program dispatch these inputs arrive through the program's conductor-supplied per-task validation fields (objective, acceptance criteria, write scope, read from the card the conductor verified before dispatch); this role never fetches them itself — it has no ledger access, which is exactly why their absence fails closed. Pipeline Markdown and an appended Completion Summary are not required and are not a second ledger.
 
 ## Read-Only Boundary
 

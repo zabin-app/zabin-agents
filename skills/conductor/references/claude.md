@@ -33,12 +33,12 @@ Dispatch one by name with the Workflow tool — `Workflow({name: "review-diff", 
 |---|---|---|---|
 | [Research sweep](../workflows/research-sweep.md) | `research-sweep` | `{questions:[{label, agentType, q}]}` | `{answered, unanswered, refutedClaims, contestedClaims}` |
 | [Plan verification](../workflows/plan-verify.md) | `plan-verify` | `{assumptions:[{label, agentType, claim}]}` | `{refuted:[…]}` |
-| [Wave implementation](../workflows/implement-wave.md) | `implement-wave` | `{workingBranch, baseRef?, tasks:[{slug, complexity, agentType, content, worktreePath?}]}` | per task `{slug, branch, status, qualityGate, files, notes, docUpdatesNeeded, completionSummary, wroteOutsideWorktree}` |
+| [Wave implementation](../workflows/implement-wave.md) | `implement-wave` | `{workingBranch, baseRef?, tasks:[{slug, complexity, agentType, content, worktreePath?, objective, acceptanceCriteria, writeFiles}]}` | per task `{slug, branch, status, qualityGate, files, notes, docUpdatesNeeded, completionSummary, wroteOutsideWorktree}` |
 | [Diff review](../workflows/review-diff.md) | `review-diff` | `{diffRange, changeType, taskFiles?, docs?, previousReview?, repoRoot?}` | `{verdict, confirmed, minors, perDimension}` |
 | [Follow-up investigation](../workflows/followup-investigate.md) | `followup-investigate` | `{issues:[{label, text}]}` | `{taskable, contested, notReproduced}` |
 | [Documentation exploration](../workflows/docs-explore.md) | `docs-explore` | `{subsystems:[{label, path}], scale?, unitCount?, packageCount?, stacks?, pinnedStructure?}` | `{maps, recommendedStructure, rationale}` |
 
-`implement-wave` carries the dispatch text in `tasks[].content` — the identity stub described in the skill's State 4, never a `path`. The legacy `path` form hands an implementor a filesystem location outside its own worktree, which is how work lands in the user's primary checkout. `worktreePath` names a worktree the main loop pre-created; worktree creation, merging, and removal stay in the main loop either way. `review-diff`'s `taskFiles` stays empty: task text lives in Zabin.
+`implement-wave` carries the dispatch text in `tasks[].content` — the identity stub described in the skill's State 4, never a `path`. The legacy `path` form hands an implementor a filesystem location outside its own worktree, which is how work lands in the user's primary checkout. `worktreePath` names a worktree the main loop pre-created; worktree creation, merging, and removal stay in the main loop either way. `tasks[].objective`/`acceptanceCriteria`/`writeFiles` carry the card's validation contract, read by the conductor at State 3, for the program's **validator stage only** — the task-validator role has no MCP access and fails closed without them, and they never reach the implementor prompt (the card fetched via `start_task` stays the implementor's single spec). `review-diff`'s `taskFiles` stays empty: task text lives in Zabin.
 
 ## Tier strings
 
