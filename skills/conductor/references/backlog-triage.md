@@ -11,11 +11,19 @@ plan actually reads it.
    this already been filed or discussed, what deferred items relate, what
    research artifact already covers it. Each hit's `source_type` and
    `source_id` (a `task`, `project_document`, `review_round`, `action_item`,
-   or `research_artifact`) name the targeted follow-up fetch —
-   `get_task`, `get_project_doc`, or the action item's own round — snippet
-   first, full fetch only for the specific hit that looks relevant
-   (two-stage). A keyword-only note in the response means the semantic index
-   was unavailable and the hits are BM25-only — still usable, say so in the
+   or `research_artifact`) name the targeted follow-up fetch — `get_task` for
+   a task, `get_project_doc` for a doc, `zabctl get reviewrounds --project
+   <id>` for a review round, `zabctl describe researchartifacts <id>` for a
+   research artifact's full body, or `zabctl get actionitems --project <id>`
+   for an action item (all three `zabctl` surfaces need a host that carries
+   `zabctl`; otherwise read the record in a Zabin client) — snippet first,
+   full fetch only for the specific hit that looks relevant (two-stage).
+   `get reviewrounds` and `get actionitems` return only id/verdict/round or
+   severity/status and a truncated title, never the full finding text; when
+   that listing is all that is reachable, judge relevance from the metadata
+   and snippet alone rather than assuming a full read happened. A
+   keyword-only note in the response means the semantic index was
+   unavailable and the hits are BM25-only — still usable, say so in the
    plan's findings.
 
    Then enumerate open and deferred action items through the executable
@@ -35,9 +43,10 @@ plan actually reads it.
 
    Retrieval-first applies to this dedup/prior-art pass only: once a
    specific action item or card is the thing being folded into the plan or
-   implemented, read it in full (`get_task`, `get_project_doc`, the round)
-   rather than trusting the 800-char snippet — the search index is
-   supporting context, never the record itself.
+   implemented, read it in full (`get_task`, `get_project_doc`, `zabctl get
+   reviewrounds`, or `zabctl describe researchartifacts <id>`) rather than
+   trusting the 800-char snippet — the search index is supporting context,
+   never the record itself.
 
 2. **Aging rule.** At each plan's State 8 close-out, list deferred items whose
    `created_at` predates the last 3 *completed* plans — this is a CANDIDATE

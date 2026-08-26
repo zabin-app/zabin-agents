@@ -10,8 +10,10 @@ The executable contract is [recovery-checkpoint.schema.json](../../../schemas/re
 2. Locate before you read. When the exact task, plan, phase, or wave id is
    not yet pinned, run 1-2 `search_context` queries scoped to what you are
    recovering — e.g. `search_context(project_id, "task tsk_... OSC 52
-   clipboard recovery")` — to find the completion summary, research
-   artifact, or review round that mentions it. This is two-stage: a snippet
+   clipboard recovery")` — to find the task, research artifact, or review
+   round that mentions it (a task's indexed chunk is its title and
+   description only — completion summaries are not indexed, so do not expect
+   a summary hit here). This is two-stage: a snippet
    plus `source_type`/`source_id` first, a full read of that specific hit
    only if it looks load-bearing. A keyword-only note in the response means
    BM25-only degradation — still usable, note it in the reconciliation.

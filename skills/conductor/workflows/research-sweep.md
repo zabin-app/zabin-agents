@@ -53,19 +53,33 @@ Before building `role_input` for a question, run 1-2 `search_context`
 queries scoped to that question — e.g. `search_context(project_id, "session
 ownership token refresh")` — to check for prior art: a research artifact,
 review round, or task that already answers it. This is two-stage: a snippet
-plus `source_type`/`source_id` first, a full fetch (`get_task`,
-`get_project_doc`, `get_plan`, or the artifact's own round) only for the
-specific hit that looks load-bearing. A keyword-only note in the response
-means the semantic index was unavailable and the hits are BM25-only — still
-usable, record it in the finding's `caveats`. Fold anything load-bearing
-found this way into the question's `context` for the dispatched role rather
-than re-researching it from nothing.
+plus `source_type`/`source_id` first, a full fetch — `get_task`,
+`get_project_doc`, `get_plan`, `zabctl describe researchartifacts <id>` for
+a research artifact's full body, or `zabctl get reviewrounds --project <id>`
+for a review round (both `zabctl` surfaces need a host that carries
+`zabctl`; otherwise read the record in a Zabin client) — only for the
+specific hit that looks load-bearing. `zabctl get reviewrounds` returns only
+verdict/round/reviewed_sha and no finding text; when that listing is all
+that is reachable, record only what the metadata and snippet support, never
+an assumed full read. A keyword-only note in the response means the
+semantic index was unavailable and the hits are BM25-only — still usable,
+record it in the finding's `caveats`. Fold anything load-bearing found this
+way into the question's `context` for the dispatched role rather than
+re-researching it from nothing — but only for `codebase_researcher` and
+`external_researcher`, whose registered input schema accepts `context`; a
+`git_historian` dispatch has no `context` field, so fold prior art there
+into a narrowed `objective` or `revision_range` instead (see the schema
+below).
 
-This narrows which questions still need a fresh dispatch; it does not
-replace enumeration (list the affected surface with the paged list tools,
-not with search hits) and it does not replace the researcher's own reads
-once scope narrows to a specific file, module, or the document the plan is
-about to act on — those are read in full, never from a snippet.
+Dispatch stays unconditional: every question in the input is still spawned
+per the Procedure below, regardless of what this retrieval pass finds — it
+is not a skip branch. Retrieval only enriches the `context` (or, for
+`git_historian`, the `objective`/`revision_range`) handed to the dispatched
+role. It does not replace enumeration (list the affected surface with the
+paged list tools, not with search hits) and it does not replace the
+researcher's own reads once scope narrows to a specific file, module, or the
+document the plan is about to act on — those are read in full, never from a
+snippet.
 
 ## Input schema
 

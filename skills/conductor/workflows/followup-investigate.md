@@ -31,8 +31,15 @@ act_042 clipboard OSC 52 duplicate write")` — to check whether this finding,
 or one like it, was already diagnosed: a prior research artifact, a
 `contested` or `not_reproduced` diagnosis from an earlier round, or a
 related action item. This is two-stage: a snippet plus
-`source_type`/`source_id` first, a full fetch (`get_task`, the artifact, or
-the action item's own round) only for the hit that matches. A keyword-only
+`source_type`/`source_id` first, a full fetch — `get_task` for a task,
+`zabctl describe researchartifacts <id>` for a research artifact's full
+body, or `zabctl get reviewrounds --project <id>` for a review round (both
+`zabctl` surfaces need a host that carries `zabctl`; otherwise read the
+record in a Zabin client) — only for the hit that matches. `zabctl get
+reviewrounds` and `zabctl get actionitems` return only verdict/round or
+severity/status and a truncated title, never the full finding text; when
+that listing is all that is reachable, judge relevance from the metadata
+and snippet alone rather than assuming a full read happened. A keyword-only
 note in the response means BM25-only degradation — still usable, mention it
 in the diagnosis's evidence.
 
