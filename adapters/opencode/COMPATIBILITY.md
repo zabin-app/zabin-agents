@@ -226,6 +226,60 @@ against any newer release — especially rows 4b and 7, which explicitly
 contradict a plausible reading of open upstream issues and could easily
 regress or be version-gated in either direction.
 
+## Acceptance probe (2026-08-28, tsk_000001a0474e36acAuKUNxjG)
+
+Everything above audited the OpenCode binary against hand-built fixtures.
+This probe instead built `zabctl` from `develop` (`67f4617a8a56ecc0d3cbaeb336f0a187809457ec`) and ran the real
+`agents install` command to produce an actual rendered install tree, then
+pointed the pinned OpenCode `v1.18.25` sandbox from the Methodology section
+above at that real tree — no hand-authored `opencode.json` or `.opencode/`
+content. The live daemon (`zabin-server`, standalone) was reachable from
+the sandbox through pre-existing loopback `socat` bridges forwarding
+`127.0.0.1:50052`/`127.0.0.1:50053` (the ports baked into
+`.agents/config/zabin-mcp.json` and therefore into the rendered
+`opencode.json`) to the daemon's actual binds; real `ZABIN_MCP_TOKEN` /
+`ZABIN_MCP_WORKER_TOKEN` credentials from the ambient environment were used
+— the stub-server fallback was not needed. **Correction to this task's own
+dispatch context:** loopback is *not* auth-exempt for either MCP mount —
+`zabin-server`'s MCP bearer-token layer runs unconditionally regardless of
+peer address (only the separate gRPC `--api-key` middleware has a
+loopback carve-out); a bare `curl` `initialize` with no `Authorization`
+header against `127.0.0.1:50063/mcp-worker` returned `401 Missing bearer
+token` before any token was supplied, confirming this directly.
+
+Repro (all commands run from a throwaway location outside the repository;
+`SC` is that scratch root):
+
+```bash
+CARGO_TARGET_DIR="$SC/probe-target" cargo build --bin zabctl -p zabin-cli
+"$SC/probe-target/debug/zabctl" agents install \
+  --contracts-root <worktree>/.agents \
+  --destination "$SC/probe-install" \
+  --mode copy --target claude_code,codex,opencode
+# isolated sandbox env (HOME + XDG_* + OPENCODE_TEST_HOME, per Methodology)
+# then, cd "$SC/probe-install" as the OpenCode project root:
+opencode mcp list
+opencode debug config      # resolved `agent` map; NEVER capture with a real token present (see row 5b)
+opencode debug skill
+opencode run --format json "TRIGGER_TOOL:<tool> ..."   # against a loopback ai-sdk-compatible stub model
+```
+
+| # | Check | Outcome | Evidence |
+| - | --- | --- | --- |
+| a | `opencode.json` parses, no MCP config errors | **PASS** | `opencode mcp list` on the freshly rendered, unmodified `opencode.json` (73-artifact install, `zabin`+`zabin-worker` MCP blocks + permission map exactly as rendered) reported both `zabin` and `zabin-worker` as `connected` against the **live** daemon (not a stub) on the first try — no parse or config-validation error. |
+| b | Rendered `.opencode/agents/` roles appear in the agent list | **PASS** | The install wrote 13 files under `.opencode/agents/` (`architecture-enforcer`, `bug-fix-reviewer`, `codebase-researcher`, `code-quality-inspector`, `doc-maintainer`, `external-researcher`, `git-historian`, `implementor`, `integration-verifier`, `logic-reasoning-checker`, `risks-tradeoffs-analyzer`, `security-reviewer`, `task-validator`); `opencode debug config`'s resolved `agent` map contained exactly those 13 keys, no more, no fewer. |
+| c | The `.agents/skills` conductor skill is discoverable | **PASS** | `opencode debug skill` listed `conductor` (plus `docs-sync`, `doc-validate`) with a real `location` and full body. The installer also symlinks `.claude/skills/conductor -> ../../.agents/skills/conductor` (confirmed with `readlink -f`), so regardless of which scanned root OpenCode's loader reports in `location`, it is reading the one file under `.agents/skills/conductor/SKILL.md`. |
+| d | MCP connect + tools list under `<serverkey>_<tool>` | **PASS, live** | With the sandbox pointed at a loopback ai-sdk-compatible stub *model* (never a stub MCP — the two MCP servers were the real daemon throughout), the stub's captured request body shows **83 real Zabin tool names** offered to the model: 62 `zabin_*` + 21 `zabin-worker_*`, alongside 10 OpenCode built-ins (`bash`, `edit`, `glob`, `grep`, `read`, `skill`, `task`, `todowrite`, `webfetch`, `write`) — 93 total, qualified-name shape confirmed. A follow-up run drove the model to call the **allowed** `zabin-worker_list_tasks` with a synthetic `project_id`; the tool actually executed against the live daemon and returned a genuine structured domain error (`[not_found] no project is registered with id 'prj_probe_permission_test' ... call \`resolve_project\` ...`) which flowed back into the next model turn — proof the call reached the real server, not a local emulation. |
+| e | Permission rules apply (a denied tool is refused) | **PASS, live** | The rendered top-level `opencode.json` permission map sets `zabin_create_board` to `"ask"` (translated from the policy's `human_gate` risk class). Driving the model to call it headlessly (no TTY to answer a prompt) produced `stderr: "permission requested: zabin_create_board (*); auto-rejecting"` and a tool-result `"error":"The user rejected permission to use this specific tool call."` — the call was refused client-side and never reached the daemon, in direct contrast to check (d)'s allowed call above which did. Separately, the renderer also emits a **stricter, per-role** override: read-only reviewer roles (`architecture-enforcer`, `bug-fix-reviewer`, `code-quality-inspector`, `integration-verifier`, and others) carry `permission: {"zabin-worker_*": "deny", "zabin_*": "deny"}` in their own `.opencode/agents/*.md` frontmatter (confirmed present in this same install output), while `implementor` carries `{"zabin-worker_*": "allow", "zabin_*": "deny"}`. That per-role `deny` frontmatter is present-and-correct in the render but was not independently re-invoked live in this probe (doing so needs the two-hop `task`-tool subagent dispatch this file's row 7 already established works on this pinned version); treat it as **DOC-CITED-from-this-render**, not a fresh VERIFIED-BY-RUN claim, until a probe specifically drives a denied subagent through the `task` tool. |
+
+No check failed; nothing here required stopping short or falling back to
+the stub-server method. One operational note for anyone repeating this:
+`opencode debug config` prints the fully-interpolated bearer token in
+plaintext (same caveat as row 5b above) — a scratch copy of that output
+containing a real, live daemon credential was captured once during this
+probe and deleted immediately after the agent-map keys were extracted from
+it; no token value is repeated in this file or was committed anywhere.
+
 ## Primary sources
 
 - [OpenCode releases](https://github.com/anomalyco/opencode/releases) —
