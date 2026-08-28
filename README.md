@@ -15,7 +15,7 @@ the full per-client, end-to-end setup walkthrough, see
 | Codex | Supported, fully rendered | `.codex/config.toml` |
 | Goose 1.45.0 | Unsupported; fail closed | Inert inspection output only (`goose/recipe.json`, `goose/settings.json`); no active artifact |
 | PI | Unsupported; fail closed | Disabled template (`{"packages": []}`); no render target |
-| OpenCode | Supported, with documented limitations | `opencode.json`, `.opencode/agents/<role>.md` × 13; native `.agents/skills` + `AGENTS.md` consumption (no bridge) |
+| OpenCode v1.18.25 | Supported, with documented limitations | `opencode.json`, `.opencode/agents/<role>.md` × 13; native `.agents/skills` consumption (no bridge); consumes project-root `AGENTS.md` if present (not itself an installed artifact) |
 
 Goose is an explicit renderer and installer target so its fail-closed behavior
 can be audited, but it is not a supported or activatable Zabin client. Its
@@ -31,16 +31,25 @@ target — name it explicitly with `--target opencode`, it is not part of the
 default target set — pinned to and audited against OpenCode `v1.18.25`; see
 its [compatibility audit](adapters/opencode/COMPATIBILITY.md) for the full
 per-claim evidence, including a shipped acceptance probe that ran the real
-installer's output against a live daemon. It consumes the portable
-`AGENTS.md` and `.agents/skills` layout natively, with no adapter-specific
-fork or bridge required. Its documented limitation is version-pinned audit
-coverage: OpenCode ships multiple releases per week, so every
-verified-by-run claim in the audit is pinned to `v1.18.25` and must be
-re-run before being relied on against a newer release; a narrower,
-independently-verified limitation is that a custom `mode: subagent` agent
-cannot be launched as the top-level session agent via `--agent` (it falls
-back to the default agent) — it remains fully dispatchable programmatically
-through the `task` tool, which is the path Zabin's own worker roles use. See
+installer's output against a live daemon. Unlike Goose and PI, OpenCode
+carries no client-lock/extension-lock file and no entry in the
+[conformance lock](tests/conformance/runner-lock.json) — its `v1.18.25` pin
+is documentary only, not mechanically enforced; re-verifying it means
+manually re-running the audit's own probes
+([compatibility audit](adapters/opencode/COMPATIBILITY.md)), not
+`zabctl agents conformance`. It consumes the portable `AGENTS.md` and
+`.agents/skills` layout natively, with no adapter-specific fork or bridge
+required. Its documented limitation is version-pinned audit coverage:
+OpenCode ships multiple releases per week, so every verified-by-run claim in
+the audit is pinned to `v1.18.25` and must be re-run before being relied on
+against a newer release; a narrower, independently-verified limitation is
+that a custom `mode: subagent` agent cannot be launched as the top-level
+session agent via `--agent` (it falls back to the default agent) — it
+remains fully dispatchable programmatically through the `task` tool, as
+verified for a synthetic, project-defined subagent probe
+(`adapters/opencode/COMPATIBILITY.md` row 7) — not a claim about how
+Zabin's own worker roles are invoked, since this bundle's workflow programs
+are `claude_code`-only. See
 [docs/INSTALL.md](docs/INSTALL.md#r10-version-dependent-claims).
 
 ## Quick start
