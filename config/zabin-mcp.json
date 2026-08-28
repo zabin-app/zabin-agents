@@ -52,6 +52,7 @@
         {"name": "claim_next_task", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "claim_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "complete_analysis_run", "group": "graph", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "complete_plan", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "create_board", "group": "task_ledger", "risk_class": "human_interaction", "approval": "human_gate", "mutates_state": true},
         {"name": "create_plan_draft", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "create_tasks", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},

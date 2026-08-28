@@ -363,3 +363,18 @@ Finally mark the wave `merged`.
 ## Review round and action-item convergence
 
 See [Review payloads](../review-templates.md) and [Action-item payloads](../ACTION_ITEMS_TEMPLATE.md). The initial review is round 0; follow-up rounds are exactly 1 and 2.
+
+## Plan close-out (explicit user request only)
+
+`complete_plan` — conductor-only, called after State 8 reporting on explicit user request, never automatically:
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "completed_by": "conductor@runner/session-01",
+  "expected_revision": 7
+}
+```
+
+`expected_revision` is optional but recommended when the last-read revision is known. Add `"allow_incomplete": true` only when the human has explicitly accepted leaving named tasks incomplete; the `unfinished-tasks` `failed_precondition` response names this override as its correction hint. A successful response returns `plan_id`, `project_id`, `status: "completed"`, `completed_by`, `completed_at`, `revision`, and `next_step`.

@@ -197,3 +197,7 @@ A fix that is too large to remediate inline is not a cap exception: it is the ne
 Read final state from Zabin and git. Report the pinned project id, plan/board/phase ids, task counts and blockers, waves, source and merged commits, gates, latest review verdict/round, follow-up count, any inline remediation performed at the cap, deferred or `wont_fix` findings, documentation routing, and capability limitations.
 
 Never reconstruct the report from conversation memory or local Markdown.
+
+### Optional close-out: complete_plan
+
+Plan completion is a distinct, human-gated step, never a routine part of reporting. Only on explicit user request — never automatically — call `complete_plan` with `completed_by` set to the conductor's own identity, after delivering the report. If the latest review verdict is `approved` or `approved_with_concerns` and every task on the plan reached `completed`, no `allow_incomplete` is needed. Using `allow_incomplete` to override the unfinished-task guard requires naming every incomplete task in the report before making the call. A worker never calls `complete_plan`; its walk ends at `in_review` and never touches plans.

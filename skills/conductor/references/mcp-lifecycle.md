@@ -11,7 +11,7 @@ Begin with `get_server_info {}`. It returns the live tool inventory for both sur
 | Group | Public names |
 |---|---|
 | Project | `get_server_info`, `register_project`, `resolve_project`, `get_pickup_context` |
-| Plan | `create_plan_draft`, `set_plan_section`, `add_phase`, `add_phase_tasks`, `finalize_plan`, `import_plan_document`, `get_plan`, `update_plan_document`, `create_board` |
+| Plan | `create_plan_draft`, `set_plan_section`, `add_phase`, `add_phase_tasks`, `finalize_plan`, `import_plan_document`, `get_plan`, `update_plan_document`, `create_board`, `complete_plan` |
 | Task ledger | `list_tasks`, `get_task`, `claim_next_task`, `claim_task`, `release_task`, `renew_task_lease`, `update_task_status`, `update_task_statuses`, `record_task_summary`, `record_task_verdict`, `record_task_verdicts`, `record_gate_result`, `record_gate_results`, `record_review_round`, `add_action_item`, `add_action_items`, `update_action_item`, `create_tasks`, `record_wave`, `update_wave_status`, `get_overlap_report`, `record_research_artifact`, `get_pipeline_state`, `search_context` |
 | Git ledger | `register_worktree`, `update_worktree_status`, `record_commits`, `list_workspaces` |
 | Human interaction | `post_progress_message`, `ask_user_questions`, `get_question_answers` |
@@ -65,10 +65,12 @@ Normalize external program output before MCP persistence. An off-list value is r
 The operational lifecycle is:
 
 ```text
-draft --finalize_plan--> ready --human approval + create_board--> confirmed
+draft --finalize_plan--> ready --human approval + create_board--> confirmed --complete_plan--> completed
 ```
 
-The wire representation may expose `draft`, `active` (ready), and `completed` (confirmed). Approval is human-only and is verified with `get_plan.approved_by` and `approved_at`. A plan edit clears approval. `create_board` must use the revision just verified as `expected_revision`.
+The wire representation may expose `draft`, `active` (ready), `confirmed`, and `completed`. Approval is human-only and is verified with `get_plan.approved_by` and `approved_at`. A plan edit clears approval. `create_board` must use the revision just verified as `expected_revision`.
+
+`completed` is terminal and reached only through `complete_plan`, a conductor-only call made at close-out on explicit user request — typically after State 8 reporting — and never automatic; a worker's walk ends at `in_review` and never touches plans. It requires `project_id`, `plan_id`, and a non-blank `completed_by`; `expected_revision` and `allow_incomplete` (default `false`) are optional. The call is refused `failed_precondition` when the plan is not `confirmed` or when tasks remain unfinished — the unfinished-tasks hint names `allow_incomplete` as the explicit-user-request override — `invalid_argument` on a blank `completed_by`, `conflict` on a stale `expected_revision`, and `not_found` on an unknown plan. A successful response returns `plan_id`, `project_id`, `status`, `completed_by`, `completed_at`, `revision`, and `next_step`.
 
 ## Task status machine and ownership
 
