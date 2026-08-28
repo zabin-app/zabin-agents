@@ -193,9 +193,9 @@
         "required_fields"
       ],
       "properties": {
-        "client": {"enum": ["claude_code", "codex", "goose"]},
+        "client": {"enum": ["claude_code", "codex", "goose", "opencode"]},
         "config_target": {
-          "enum": [".mcp.json", ".codex/config.toml", "goose/recipe.json"]
+          "enum": [".mcp.json", ".codex/config.toml", "goose/recipe.json", "opencode.json"]
         },
         "server_key": {
           "type": "string",

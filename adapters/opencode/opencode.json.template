@@ -1,0 +1,4 @@
+{
+  "mcp": @@MCP_SERVERS@@,
+  "permission": @@PERMISSION_RULES@@
+}
