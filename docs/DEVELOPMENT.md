@@ -55,7 +55,7 @@ These tests use in-tree fixtures and temporary directories and do not require li
 
 ## Generate Client Adapters
 
-Rendering requires an explicit target, output directory, and both credential environment variables. It validates policy and schema, renders in memory, and writes deterministic artifacts atomically; missing, empty, or literal placeholder credentials fail before output. `--mode` selects `dry-run`, `write` (the default), or `check`; the supported targets are `claude_code`, `codex`, and `goose`.
+Rendering requires an explicit target, output directory, and both credential environment variables. It validates policy and schema, renders in memory, and writes deterministic artifacts atomically; missing, empty, or literal placeholder credentials fail before output. `--mode` selects `dry-run`, `write` (the default), or `check`; the supported targets are `claude_code`, `codex`, `goose`, and `opencode` (the authoritative list is `zabctl agents render --help` / INSTALL.md's target section).
 
 Preview without writing:
 
