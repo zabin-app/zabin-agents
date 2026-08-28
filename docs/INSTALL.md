@@ -70,8 +70,9 @@ silently substituted with a discovered one.
 ### Selecting client targets
 
 `install` lays every *default* client adapter unless told otherwise. `--target`
-narrows the selection, comma-separated from `claude_code`, `codex`, `goose`
-(default `claude_code,codex`):
+narrows the selection, comma-separated from `claude_code`, `codex`, `goose`,
+`opencode` (default `claude_code,codex`); `opencode` is opt-in — it is never
+installed unless named explicitly:
 
 ```sh
 zabctl agents install --contracts-root /path/to/zabin/.agents \
@@ -79,7 +80,13 @@ zabctl agents install --contracts-root /path/to/zabin/.agents \
 ```
 
 An unknown target — and `codex_admin_requirements`, which is never installable —
-is refused (exit 2) naming the allowed set. A subset install never touches an
+is refused (exit 2) naming the allowed set. Verified:
+
+```text
+error: usage: ordinary installation target is forbidden: bogus_target (allowed targets: claude_code, codex, goose, opencode)
+```
+
+A subset install never touches an
 unselected target's files or manifest entries (a later full-set `--mode check`
 still reports them clean), and the shared families — role instructions under
 `<destination>/agents`, portable skills under `<destination>/.agents/skills`,
@@ -324,6 +331,66 @@ evidence, never an activatable recipe. Full command reference, `--mode live`
 diagnostics, and the conformance runner live in
 [docs/DEVELOPMENT.md](DEVELOPMENT.md).
 
+## OpenCode
+
+OpenCode is a rendered, **opt-in** installer/render target, pinned to and
+audited against OpenCode `v1.18.25` — see
+[`adapters/opencode/COMPATIBILITY.md`](../adapters/opencode/COMPATIBILITY.md)
+for the full per-claim audit, including a shipped acceptance probe that ran
+the real installer's output against a live daemon. It is not part of
+`DEFAULT_TARGETS` (`claude_code,codex`), so name it explicitly:
+
+```sh
+zabctl agents install --contracts-root /path/to/zabin/.agents \
+  --mode copy --destination /absolute/destination --target opencode
+```
+
+Verified — one `install --mode copy --target opencode` run against a scratch
+destination produced:
+
+```text
+<dest>/agents/<13 role>.md
+<dest>/.agents/skills/{conductor,docs-sync,doc-validate}/...
+<dest>/.opencode/agents/<13 role, kebab-case>.md
+<dest>/opencode.json
+<dest>/.zabin/installer-manifest.json
+```
+
+Unlike the Claude Code target, there is no bridge or symlink step: OpenCode
+reads the portable `.agents/skills` directory and project-root `AGENTS.md`
+natively (`adapters/opencode/COMPATIBILITY.md` rows 2 and 3), so no
+`.opencode/skills` copy is written. Combine `opencode` with the default
+targets in one run — `--target claude_code,codex,opencode` — to install all
+three adapters together; `zabctl agents install` with no `--target` still
+only lays out `DEFAULT_TARGETS`, unchanged by OpenCode's addition to the
+allowed target set.
+
+**Credentials:** the same two environment variables as every other target —
+`ZABIN_MCP_TOKEN` (conductor) and `ZABIN_MCP_WORKER_TOKEN` (worker) — bound
+into `opencode.json` as `{env:VAR}` header references, never a literal
+value:
+
+```text
+"headers": {"Authorization": "Bearer {env:ZABIN_MCP_TOKEN}"}
+```
+
+`{env:...}` header interpolation reaching the wire is VERIFIED-BY-RUN in the
+compatibility audit (row 5b). **Loopback is not auth-exempt for either MCP
+mount** — both mounts' bearer-token check runs unconditionally regardless of
+peer address; confirmed directly by the audit's acceptance probe (a bare,
+unauthenticated `initialize` against the worker mount returned `401 Missing
+bearer token`).
+
+**Collision rule:** a pre-existing, unmanaged `opencode.json` at the
+destination is refused the same way any other adapter file is — verified:
+
+```text
+error: contract: adapter collision at <dest>/opencode.json: [{"current":"<unmanaged>","expected":"sha256:...", ...}]
+```
+
+Move a hand-authored `opencode.json` aside before installing; the installer
+never overwrites something it does not already own in the manifest.
+
 ## Coverage matrix
 
 | Client | Status | Rendered/installed artifacts | Verified against |
@@ -332,7 +399,7 @@ diagnostics, and the conformance runner live in
 | Codex | Supported, fully rendered | `.codex/config.toml` (`mcp_servers."zabin"` / `"zabin-worker"`, per-tool `approval_mode`, bearer-env-var binding) | Rendered directly |
 | Goose 1.45.0 | Unsupported; fail-closed | `goose/recipe.json`, `goose/settings.json` — both inert (`active: false`, empty `artifacts`); no active artifact ever produced | Repo's own [`adapters/goose/COMPATIBILITY.md`](../adapters/goose/COMPATIBILITY.md) + [`client-lock.json`](../adapters/goose/client-lock.json), pinned to 1.45.0 |
 | Pi | Unsupported; fail-closed | None — there is no `pi` render target; only a conformance lock | [`adapters/pi/COMPATIBILITY.md`](../adapters/pi/COMPATIBILITY.md) + [`extension-lock.json`](../adapters/pi/extension-lock.json), pinned to PI 0.84.1 / `pi-mcp-adapter` 2.22.0 |
-| OpenCode | **Version-dependent, unverified** | None managed by this repository | No repository lock or compatibility audit exists for OpenCode — see [R10](#r10-version-dependent-claims) |
+| OpenCode | Supported, with documented limitations (opt-in target) | `opencode.json`; `.opencode/agents/<role>.md` × 13 (kebab-case names, `mode: subagent`, per-role tool permission map); native `.agents/skills` + `AGENTS.md` consumption, no bridge | [`adapters/opencode/COMPATIBILITY.md`](../adapters/opencode/COMPATIBILITY.md), pinned to `v1.18.25`, incl. a shipped acceptance probe against the real installer and a live daemon |
 
 ### The 13 rendered `.claude/agents` files
 
@@ -395,28 +462,52 @@ empty `{"packages": []}` and is never activated by this tooling. Whether Pi
 consumes the shared `AGENTS.md` / Agent Skills the same way Goose does is
 **unaudited** in this repository; treat it as unverified.
 
-### OpenCode: unmanaged, version-dependent
+### OpenCode: supported, with documented limitations
 
-OpenCode is not modeled by this repository at all — no adapter, no render
-target, no compatibility lock, no client-lock pin. Any claim that OpenCode
-"consumes `AGENTS.md` + `SKILL.md`" is a general capability observation, not
-a verified-against-source audit the way Goose and Pi are; treat it the same
-as any other unmanaged client that happens to read the portable
-`AGENTS.md`/Agent Skills layout: it gets the shared instructions and skill
-directory for free (nothing in this repo prevents that), but it receives no
-rendered adapter, no credential wiring, and no fail-closed guarantee. Do not
-advertise it as supported.
+Unlike Goose and Pi, OpenCode has a real adapter and render target — see
+[OpenCode](#opencode) above for the install walkthrough. It is a strong
+structural match for Zabin: it reads project-root `AGENTS.md` automatically,
+discovers Agent Skills from `.agents/skills` with no adapter-specific fork,
+speaks Streamable-HTTP remote MCP with `{env:VAR}`/`{file:path}` header
+interpolation, and qualifies MCP tools per-server (`<serverkey>_<tool>`) so
+Zabin's two surfaces coexist without name collisions — all
+VERIFIED-BY-RUN in
+[`adapters/opencode/COMPATIBILITY.md`](../adapters/opencode/COMPATIBILITY.md).
+The audit's own live acceptance probe (dated section at the bottom of that
+file) additionally rendered and installed the real `zabctl agents install`
+output into a real OpenCode sandbox pointed at a live Zabin daemon: MCP
+connect, the qualified tool list (83 real Zabin tools + 10 built-ins), and
+the `ask`/`deny` permission map all behaved exactly as rendered.
+
+The documented limitation is **version-pinned audit coverage**: OpenCode
+ships multiple releases per week (the audit's own install-script check
+observed the ambient system package already 21 patch versions ahead of the
+pinned tag at audit time), so every VERIFIED-BY-RUN claim in the audit is
+pinned to `v1.18.25` and must be re-run — the audit documents each probe's
+exact, reproducible repro shape — before being relied on against a newer
+release. A narrower, independently-verified limitation that does hold on
+the pinned version: a custom `mode: subagent` agent (which is what this
+bundle's rendered `.opencode/agents/*.md` roles are) cannot be launched as
+the top-level session agent via `--agent`; it falls back to the default
+agent. That agent remains fully dispatchable programmatically through the
+`task` tool end to end — this refutes, for the pinned version, an assumed
+upstream dispatch-breakage premise that must not be restated as current
+fact.
 
 ### R10: version-dependent claims
 
 Per this project's plan risk **R10**: external-harness claims that are not
-backed by this repository's own compatibility audit and lock file (i.e.
-everything about OpenCode, and any Goose/Pi detail *not* traceable to
-`adapters/goose/COMPATIBILITY.md` or `adapters/pi/COMPATIBILITY.md`) came
-from general research and may age or drift with client releases. This guide
-states exactly which client versions were verified — 1.45.0 for Goose, 0.84.1
-/ `pi-mcp-adapter` 2.22.0 for Pi — and marks everything else version-dependent
-rather than implying universal or current support.
+backed by this repository's own compatibility audit and lock file — any
+Goose, Pi, or OpenCode detail *not* traceable to
+`adapters/goose/COMPATIBILITY.md`, `adapters/pi/COMPATIBILITY.md`, or
+`adapters/opencode/COMPATIBILITY.md` — came from general research and may
+age or drift with client releases. This guide states exactly which client
+versions were verified — 1.45.0 for Goose, 0.84.1 / `pi-mcp-adapter` 2.22.0
+for Pi, `v1.18.25` for OpenCode — and marks everything else version-dependent
+rather than implying universal or current support. OpenCode's aging caveat
+is sharper than Goose's or Pi's: given its release cadence, re-run
+`adapters/opencode/COMPATIBILITY.md`'s reproducible probes before relying on
+any of its verdicts against a release newer than `v1.18.25`.
 
 ## Credentials
 
