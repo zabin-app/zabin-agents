@@ -373,7 +373,7 @@ See [Review payloads](../review-templates.md) and [Action-item payloads](../ACTI
   "project_id": "prj_example",
   "plan_id": "fplan_example",
   "completed_by": "conductor@runner/session-01",
-  "expected_revision": 7
+  "expected_revision": "rev_7f3ec2d5e208664d"
 }
 ```
 
