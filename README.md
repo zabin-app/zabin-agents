@@ -5,7 +5,9 @@ client adapters, schemas, and the policy for two Zabin MCP surfaces. It renders
 and installs configuration for supported clients without embedding credentials,
 and validates the same contracts with the `zabctl agents` command family. For
 the full per-client, end-to-end setup walkthrough, see
-[docs/INSTALL.md](docs/INSTALL.md).
+[docs/INSTALL.md](docs/INSTALL.md). The project-manager skill under `pm/` at
+the repository root is deliberately outside this bundle and is never
+installed by `zabctl agents install`.
 
 ## Client support
 
