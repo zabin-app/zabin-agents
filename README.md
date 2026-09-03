@@ -5,8 +5,11 @@ client adapters, schemas, and the policy for two Zabin MCP surfaces. It renders
 and installs configuration for supported clients without embedding credentials,
 and validates the same contracts with the `zabctl agents` command family. For
 the full per-client, end-to-end setup walkthrough, see
-[docs/INSTALL.md](docs/INSTALL.md). The project-manager skill under pm/zabin-pm in the zabin repository, outside this bundle (published per release as zabin-pm-<version>.zip on https://github.com/zabin-app/zabin-releases), is deliberately outside this bundle and is never
-installed by `zabctl agents install`.
+[docs/INSTALL.md](docs/INSTALL.md). The project-manager skill lives under
+pm/zabin-pm in the zabin repository, outside this bundle (published per
+release as zabin-pm-<version>.zip on
+https://github.com/zabin-app/zabin-releases), and is never installed by
+`zabctl agents install`.
 
 ## Client support
 
@@ -58,9 +61,10 @@ are `claude_code`-only. See
 The agent-contracts tooling is the `zabctl agents` command family, implemented
 in the zabin repository's `zabin-agent-tooling` crate and shipped in the
 `zabctl` binary. A prebuilt `zabctl` binary is available from https://github.com/zabin-app/zabin-releases.
-`zabctl agents bootstrap --repo <git-url>` clones (or
-fast-forwards) this repository and runs static diagnostics in one step;
-name `--install-into <dir>` to also install and render adapters in the same
+`zabctl agents bootstrap` clones (or fast-forwards) this repository — the
+public zabin-app/zabin-agents repository by default, or a fork/mirror named
+with `--repo <git-url>` — and runs static diagnostics in one step; name
+`--install-into <dir>` to also install and render adapters in the same
 call. A record-driven bare re-run checks and reports without writing; pass
 `--apply` to perform the recorded install. See
 [docs/INSTALL.md](docs/INSTALL.md) for the full walkthrough, including the
@@ -70,7 +74,9 @@ exact behavior when `--install-into`, `--apply`, or neither is given.
 
 This repository is publicly available at https://github.com/zabin-app/zabin-agents.
 It is consumed by the Zabin project as a git submodule at `.agents`, pinned to a specific commit.
-To work with the bundle standalone, clone it directly or use `zabctl agents bootstrap --repo https://github.com/zabin-app/zabin-agents`.
+To work with the bundle standalone, clone it directly or use
+`zabctl agents bootstrap` (defaults to this repository; pass
+`--repo <git-url>` to bootstrap from a fork or mirror instead).
 When cloning Zabin itself, use `git clone --recurse-submodules` or run `git submodule update --init` to initialize the `.agents` submodule.
 
 From a trusted checkout, the offline static diagnostics alone:

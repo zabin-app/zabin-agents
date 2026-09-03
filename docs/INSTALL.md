@@ -44,17 +44,19 @@ finds `.agents` on its own — an uninitialized submodule appears as an empty
 directory, and `zabctl agents` discovery fails with a marker-file error (markers
 are `config/zabin-mcp.json`, `schemas/mcp-policy.schema.json`, `adapters/`).
 
+### Editing the bundle
+
+Change the bundle in the **zabin-agents** submodule itself, or in a separate
+clone of https://github.com/zabin-app/zabin-agents — never by editing the
+copy checked out under `<zabin>/.agents` and committing to zabin directly.
+Commit and push the change there first, then bump the pinned commit in zabin
+by running `git add .agents` from the zabin repository root and committing
+the resulting submodule pointer update.
+
 **Cloning zabin with the submodule initialized:**
 
 ```sh
 git clone --recurse-submodules <zabin-repo-url>
-```
-
-```text
-Cloning into 'zabin'...
-...
-Submodule '.agents' registered for path '.agents'
-...
 ```
 
 If you already have a zabin checkout, initialize the `.agents` submodule:
@@ -81,11 +83,15 @@ never when `--contracts-root` was given explicitly.
 **Using the bundle standalone:**
 
 For a machine without a zabin checkout — installing into another project, or
-working independently — clone zabin-agents directly or use `zabctl agents bootstrap`:
+working independently — clone zabin-agents directly or use `zabctl agents
+bootstrap`, which defaults to the public zabin-app/zabin-agents repository on
+a first run:
 
 ```sh
-zabctl agents bootstrap --repo https://github.com/zabin-app/zabin-agents
+zabctl agents bootstrap
 ```
+
+Pass `--repo <git-url>` to bootstrap from a fork or mirror instead.
 
 Outside a zabin checkout, name the bundle explicitly:
 
@@ -144,6 +150,16 @@ zabin checkout and wants its own portable copy of the bundle. It acquires
 diagnostics, and — only when told where — installs and renders adapters, in
 one flow. If you already have a zabin checkout with the submodule initialized, skip this section and use
 `--contracts-root <zabin>/.agents` directly, or run `zabctl agents <command>` from anywhere in the checkout for auto-discovery.
+
+A bare invocation clones the public zabin-app/zabin-agents repository (or, on
+a later run, whichever repository an earlier run recorded in
+`~/.zabin/agents.toml`):
+
+```sh
+zabctl agents bootstrap
+```
+
+Pass `--repo <git-url>` to bootstrap from a fork or mirror instead:
 
 ```sh
 zabctl agents bootstrap --repo <git-url>
@@ -254,8 +270,8 @@ but is not a git repository; nothing was changed").
 ## Manual flow: doctor / install / render
 
 For finer control than `bootstrap` gives you, run the commands directly
-against the bundle inside the zabin checkout (at `.agents` submodule) — no clone or `cd` required beyond having
-the zabin checkout:
+against the `.agents` submodule inside the zabin checkout — no clone or `cd`
+required beyond having the zabin checkout:
 
 ```sh
 # From anywhere inside the checkout; offline, no network/credential reads:
