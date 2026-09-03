@@ -25,21 +25,45 @@ read as a supported-client guarantee.
   `agents` never contacts `zabin-server`; it works with no server, no
   credentials, and no config file.
 - Git — only for the fresh-machine `bootstrap` clone path below. Working
-  inside a zabin checkout needs no clone: the bundle is already at
-  `<repo>/.agents`.
+  inside a zabin checkout needs the `.agents` submodule initialized: run
+  `git submodule update --init` if it is not yet initialized.
 - Native clients (Claude Code, Codex, …) are needed only to *use* what gets
   installed, not to run `zabctl agents` itself.
 
-## Source of truth: the repo-embedded bundle
+## Source of truth: the zabin-agents repository
 
-The contracts bundle ships **inside the zabin repository**, at `<repo>/.agents`
-— it is not a separate repository to clone. `ContractsRoot::discover` walks
-ancestors from the current directory, testing each directory and its
-`.agents` child, and stops at the first bundle it finds; the walk also stops
-at the enclosing repository root (so a bundle above your project is never
-adopted) and never reaches or adopts `$HOME`. Practically: run any
-`zabctl agents <command>` from anywhere inside a zabin checkout and it finds
-`.agents` on its own —
+The contracts bundle is the **zabin-agents** repository, publicly available at
+https://github.com/zabin-app/zabin-agents and is the authoritative source. The
+zabin project consumes it as a git submodule at `.agents`, pinned to a specific
+commit. `ContractsRoot::discover` walks ancestors from the current directory,
+testing each directory and its `.agents` child, and stops at the first bundle it
+finds; the walk also stops at the enclosing repository root (so a bundle above
+your project is never adopted) and never reaches or adopts `$HOME`. Practically:
+run any `zabctl agents <command>` from anywhere inside a zabin checkout and it
+finds `.agents` on its own — an uninitialized submodule appears as an empty
+directory, and `zabctl agents` discovery fails with a marker-file error (markers
+are `config/zabin-mcp.json`, `schemas/mcp-policy.schema.json`, `adapters/`).
+
+**Cloning zabin with the submodule initialized:**
+
+```sh
+git clone --recurse-submodules <zabin-repo-url>
+```
+
+```text
+Cloning into 'zabin'...
+...
+Submodule '.agents' registered for path '.agents'
+...
+```
+
+If you already have a zabin checkout, initialize the `.agents` submodule:
+
+```sh
+git submodule update --init
+```
+
+Verified from the repository root and from a nested subdirectory alike:
 
 ```sh
 zabctl agents doctor
@@ -51,15 +75,22 @@ Zabin doctor: DEGRADED (static mode)
 ...
 ```
 
-— verified from the repository root and from a nested subdirectory alike; the
-discovery notice above is printed to stderr only when the root was
-discovered, never when `--contracts-root` was given explicitly.
+The discovery notice above is printed to stderr only when the root was discovered,
+never when `--contracts-root` was given explicitly.
 
-Outside a zabin checkout — installing into another project, or running from a
-different working directory — name the bundle explicitly:
+**Using the bundle standalone:**
+
+For a machine without a zabin checkout — installing into another project, or
+working independently — clone zabin-agents directly or use `zabctl agents bootstrap`:
 
 ```sh
-zabctl agents install --contracts-root /path/to/zabin/.agents \
+zabctl agents bootstrap --repo https://github.com/zabin-app/zabin-agents
+```
+
+Outside a zabin checkout, name the bundle explicitly:
+
+```sh
+zabctl agents install --contracts-root /path/to/zabin-agents \
   --mode copy --destination /absolute/destination
 ```
 
@@ -111,8 +142,8 @@ skills root keeps an absolute target.
 zabin checkout and wants its own portable copy of the bundle. It acquires
 (clones or fast-forwards) a contracts-bundle-shaped repository, runs static
 diagnostics, and — only when told where — installs and renders adapters, in
-one flow. If you already have a zabin checkout, skip this section and use
-`--contracts-root <repo>/.agents` directly, as above.
+one flow. If you already have a zabin checkout with the submodule initialized, skip this section and use
+`--contracts-root <zabin>/.agents` directly, or run `zabctl agents <command>` from anywhere in the checkout for auto-discovery.
 
 ```sh
 zabctl agents bootstrap --repo <git-url>
@@ -223,7 +254,7 @@ but is not a git repository; nothing was changed").
 ## Manual flow: doctor / install / render
 
 For finer control than `bootstrap` gives you, run the commands directly
-against the repo-embedded bundle — no clone or `cd` required beyond having
+against the bundle inside the zabin checkout (at `.agents` submodule) — no clone or `cd` required beyond having
 the zabin checkout:
 
 ```sh
@@ -255,14 +286,14 @@ Checks:
 stays unsupported by design), not a failure to fix.
 
 Then install the shared roles, skills, and every default client adapter in
-one step. Add `--contracts-root <repo>/.agents` when the working directory
+one step. Add `--contracts-root <zabin>/.agents` when the working directory
 isn't inside the checkout — for example installing into `~` for a global
 Claude Code setup:
 
 ```sh
-zabctl agents install --contracts-root <repo>/.agents --mode dry-run --destination /absolute/destination
-zabctl agents install --contracts-root <repo>/.agents --mode copy --destination /absolute/destination
-zabctl agents install --contracts-root <repo>/.agents --mode check --destination /absolute/destination
+zabctl agents install --contracts-root <zabin>/.agents --mode dry-run --destination /absolute/destination
+zabctl agents install --contracts-root <zabin>/.agents --mode copy --destination /absolute/destination
+zabctl agents install --contracts-root <zabin>/.agents --mode check --destination /absolute/destination
 ```
 
 **Verified, and a correction to older assumptions:** `install` has no

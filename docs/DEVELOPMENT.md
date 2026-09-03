@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - A local clone of this repository.
-- A built `zabctl` binary. Rendering, installation, diagnostics, recovery, and conformance are the `zabctl agents` command family, implemented in the zabin repository's `zabin-agent-tooling` crate; build it with `cargo build --release -p zabin-cli` in the zabin workspace, or use an installed `zabctl`.
+- A built `zabctl` binary. Rendering, installation, diagnostics, recovery, and conformance are the `zabctl agents` command family, implemented in the zabin repository's `zabin-agent-tooling` crate. zabctl comes from the zabin workspace build or the zabin-releases installer.
 - Native clients are needed only to install or observe their adapters. Goose 1.45.0 is an optional pinned observation target and remains unsupported.
 - Full locked conformance additionally requires the exact Node, client, official runner, transitive lock, and artifact versions recorded in `tests/conformance/runner-lock.json`. The runner downloads nothing.
 
