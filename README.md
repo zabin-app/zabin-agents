@@ -182,8 +182,12 @@ surfaces:
 - `worker` exposes a smaller task-scoped allowlist and denies durable,
   destructive, and human-interaction classes.
 
-Use the URLs in `config/zabin-mcp.json`; HTTP endpoint addresses are
-configuration-driven. Port `50051` is the gRPC listener, not an HTTP endpoint.
+The URLs in `config/zabin-mcp.json` are the canonical loopback defaults;
+the endpoint a rendered adapter actually names is resolved when it is
+installed (flag, environment, or the `.zabin` marker pair, with a loopback
+rule for repository-controlled values) — see
+[docs/INSTALL.md#endpoints](docs/INSTALL.md#endpoints). Port `50051` is the
+gRPC listener, not an HTTP endpoint.
 
 | Surface | Environment variable | Default diagnostic file name |
 | --- | --- | --- |

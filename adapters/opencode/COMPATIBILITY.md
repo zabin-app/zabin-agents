@@ -237,7 +237,10 @@ content. The live daemon (`zabin-server`, standalone) was reachable from
 the sandbox through pre-existing loopback `socat` bridges forwarding
 `127.0.0.1:50052`/`127.0.0.1:50053` (the ports baked into
 `.agents/config/zabin-mcp.json` and therefore into the rendered
-`opencode.json`) to the daemon's actual binds; real `ZABIN_MCP_TOKEN` /
+`opencode.json` — the canonical defaults at probe time; an endpoint override
+at install time, `--mcp-endpoint` / `--mcp-worker-endpoint` or the marker and
+environment layers described in `docs/INSTALL.md#endpoints`, changes the URLs
+rendered into `opencode.json` accordingly) to the daemon's actual binds; real `ZABIN_MCP_TOKEN` /
 `ZABIN_MCP_WORKER_TOKEN` credentials from the ambient environment were used
 — the stub-server fallback was not needed. **Correction to this task's own
 dispatch context:** loopback is *not* auth-exempt for either MCP mount —

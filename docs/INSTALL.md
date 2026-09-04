@@ -100,6 +100,11 @@ zabctl agents install --contracts-root /path/to/zabin-agents \
   --mode copy --destination /absolute/destination
 ```
 
+If the daemon is not on the policy's default ports, add `--mcp-endpoint` /
+`--mcp-worker-endpoint` (or export `ZABIN_MCP_ENDPOINT` /
+`ZABIN_MCP_WORKER_ENDPOINT`, or run from a checkout whose `.zabin` marker
+records the URLs) — see [Endpoints](#endpoints).
+
 `doctor`, `render`, `install`, `validate`, and `conformance` all accept
 `--contracts-root`; an explicit path is validated as given and is never
 silently substituted with a discovered one.
@@ -249,6 +254,9 @@ you hit the exact overlap refusal shown above. Verified working pattern:
 zabctl agents bootstrap --repo <git-url> \
   --destination ~/.local/share/zabin-agents \
   --install-into "$HOME"
+# add --mcp-endpoint / --mcp-worker-endpoint when the daemon is not on the
+# default ports (see "Endpoints"); a home install is one endpoint set for
+# every project on this machine.
 ```
 
 With the bundle clone relocated, `$HOME/.agents/skills` and `$HOME/agents`
@@ -368,6 +376,8 @@ zabctl agents render --target claude_code --output-dir /absolute/staging/claude 
 zabctl agents render --target claude_code --output-dir /absolute/staging/claude --mode check
 zabctl agents render --target codex --output-dir /absolute/staging/codex --mode write
 zabctl agents render --target goose --output-dir /absolute/staging/goose --mode write
+# non-default daemon ports: append --mcp-endpoint <URL> --mcp-worker-endpoint <URL>
+# (Codex has no environment expansion in its `url`, so the literal must be right here)
 ```
 
 Verified: `render --target claude_code` alone reproduces the same 20 files
@@ -390,6 +400,7 @@ the real installer's output against a live daemon. It is not part of
 ```sh
 zabctl agents install --contracts-root /path/to/zabin/.agents \
   --mode copy --destination /absolute/destination --target opencode
+# --mcp-endpoint / --mcp-worker-endpoint apply here too (see "Endpoints")
 ```
 
 Verified — one `install --mode copy --target opencode` run against a scratch
@@ -630,10 +641,72 @@ both `~/.zabin/mcp.token` and `~/.zabin/mcp-worker.token` exist at mode
 server's own token-file discipline. Static diagnostics (`--mode static`, the
 default) never read either environment variable or token file.
 
-[`config/zabin-mcp.json`](../config/zabin-mcp.json) is the single owner of
-both surfaces' URLs, identities, transport, and credential *bindings* (names,
-never values) — do not restate endpoint or port numbers anywhere else;
-correct them there and re-render.
+[`config/zabin-mcp.json`](../config/zabin-mcp.json) owns both surfaces'
+identities, tool bindings, transport type, credential *bindings* (names,
+never values), and the **canonical loopback defaults**
+(`http://127.0.0.1:50052/mcp`, `http://127.0.0.1:50053/mcp-worker`). The
+endpoint a rendered adapter actually names is resolved at install time — see
+[Endpoints](#endpoints) below. Do not edit the policy file to point a
+deployment somewhere else.
+
+## Endpoints
+
+A daemon does not have to listen on the policy's default ports, and a client
+adapter is only useful if it names the address the daemon actually binds.
+`zabctl agents install`, `render`, `doctor`, and `bootstrap` therefore resolve
+one endpoint per surface, highest layer first:
+
+| Layer | Conductor surface | Worker surface |
+| --- | --- | --- |
+| Flag | `--mcp-endpoint <URL>` | `--mcp-worker-endpoint <URL>` |
+| Environment | `ZABIN_MCP_ENDPOINT` | `ZABIN_MCP_WORKER_ENDPOINT` |
+| `.zabin/local.toml` (untracked, per machine) | `mcp_url` | `mcp_worker_url` |
+| `.zabin/project.toml` (committed) | `mcp_url` | `mcp_worker_url` |
+| Policy | canonical default | canonical default |
+
+The marker pair is the same one `zabctl project render-mcp` reads, discovered
+by walking up from the working directory (`bootstrap` starts the walk at
+`--install-into` when given). Every value must be an `http`/`https` URL with a
+host, no userinfo, and the surface's own mount path — exactly `/mcp` for the
+conductor and `/mcp-worker` for the worker — so a worker adapter can never be
+handed the conductor surface.
+
+**Loopback rule.** A rendered adapter is what a client sends its bearer token
+to, so a repository-controlled document may not steer it off the machine: a
+value from the committed `.zabin/project.toml`, or from a `.zabin/local.toml`
+that is tracked or whose untracked state cannot be verified, may only name
+`127.0.0.1`, `localhost`, or `::1`. Anything else is refused — the command
+exits non-zero, writes nothing, and names the file, key, host, and remedy
+(pass the flag, export the variable, or move the value into an untracked
+`.zabin/local.toml`). A flag or environment value is operator input and may
+name any host that passes the shape check.
+
+Every command prints the endpoint it resolved for each surface and the layer
+it came from (`flag`, `env`, `.zabin/local.toml`, `.zabin/project.toml`, or
+`policy`) on stderr — a JSON object for `install` and `bootstrap --json`, one
+line per surface otherwise. An install performed with an override records the
+endpoints in `.zabin/installer-manifest.json`; `--mode check` reuses those
+recorded endpoints when nothing else resolves (reported as source
+`manifest`), so a later check from a shell without the variables still
+compares against what was installed, while a changed marker correctly shows
+as drift. An install with no override renders the policy defaults and drops
+the recorded key.
+
+A home-level install (`--destination "$HOME"` or `--install-into "$HOME"`)
+renders **one** endpoint set for every project on the machine. Per-project
+divergence belongs to the clients: Codex layers a trusted project's
+`.codex/config.toml` over `~/.codex/config.toml`, and Claude Code reads the
+project's own `.mcp.json`.
+
+```sh
+# Daemon bound to 50062/50063 instead of the defaults:
+zabctl agents install --contracts-root /path/to/zabin-agents \
+  --mode copy --destination "$HOME" \
+  --mcp-endpoint http://127.0.0.1:50062/mcp \
+  --mcp-worker-endpoint http://127.0.0.1:50063/mcp-worker
+# ...or export ZABIN_MCP_ENDPOINT / ZABIN_MCP_WORKER_ENDPOINT, or run from a
+# checkout whose .zabin marker pair records the same URLs.
+```
 
 ## The single-conductor model
 
