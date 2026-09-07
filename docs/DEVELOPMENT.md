@@ -109,10 +109,10 @@ Do not convert the output into an active recipe or settings file. The audited ga
 
 ## Install and Check Portable Assets
 
-The installer has no implicit home-directory destination. Always provide an explicit, absolute destination. Begin with a dry run:
+The library has no implicit destination — the `zabctl` grammar defaults `--destination` to the home directory and passes it explicitly — and `install` requires a client selection (`--claude`, `--codex`, `--goose`, `--opencode`, or `--all`). For maintained verification, name an explicit, absolute destination. Begin with a dry run:
 
 ```bash
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode dry-run \
   --destination /absolute/destination
 ```
@@ -120,7 +120,7 @@ zabctl agents install \
 Install copies only after reviewing the plan. Obtaining client workspace trust and server approval remain separate states that installation never grants:
 
 ```bash
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode copy \
   --destination /absolute/destination
 ```
@@ -128,18 +128,18 @@ zabctl agents install \
 Verify the installed state without changing it:
 
 ```bash
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode check \
   --destination /absolute/destination
 ```
 
 The installer writes the portable role instructions under `<destination>/agents` and the Agent Skills under `<destination>/.agents/skills`, tracking ownership in `<destination>/.zabin/installer-manifest.json`; it reports an `activation` state that stays `inactive` until a client grants it, and never marks itself active. Check mode exits `1` for drift and `2` for an unsafe or invalid installation. `--mode symlink` is available for locally trusted development destinations; `copy` is the safer default for independent installations.
 
-The unsupported Goose path creates no active Goose configuration. The installer has no per-client target; it plans only the shared portable roles and skills and reports activation `inactive`:
+The unsupported Goose path creates no active Goose configuration: `--goose` plans only the shared portable roles and skills and reports activation `inactive`:
 
 ```bash
-zabctl agents install --mode dry-run --destination /absolute/destination
-zabctl agents install --mode check --destination /absolute/destination
+zabctl agents install --goose --mode dry-run --destination /absolute/destination
+zabctl agents install --goose --mode check --destination /absolute/destination
 ```
 
 An unsupported Goose target must report inactive and must not own `goose/recipe.json` or `goose/settings.json`; those artifacts are produced only by `zabctl agents render --target goose` as inert evidence.

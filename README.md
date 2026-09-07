@@ -31,8 +31,8 @@ the [extension lock](adapters/pi/extension-lock.json), and the
 [disabled settings template](adapters/pi/settings.json.template). The
 [conformance lock](tests/conformance/runner-lock.json) independently keeps both
 clients unsupported. OpenCode is a rendered, **opt-in** installer/render
-target — name it explicitly with `--target opencode`, it is not part of the
-default target set — pinned to and audited against OpenCode `v1.18.25`; see
+target — name it explicitly (`install --opencode` or `--all`, `render --target
+opencode`); no other selection includes it — pinned to and audited against OpenCode `v1.18.25`; see
 its [compatibility audit](adapters/opencode/COMPATIBILITY.md) for the full
 per-claim evidence, including a shipped acceptance probe that ran the real
 installer's output against a live daemon. Unlike Goose and PI, OpenCode
@@ -94,19 +94,22 @@ maintained setup and verification workflow.
 
 ## Safe installation
 
-The installer has no implicit home-directory destinations. Use a trusted,
-absolute destination and inspect a dry run before copying:
+The library has no implicit destination; the `zabctl` grammar defaults
+`--destination` to the home directory and hands it to the library explicitly.
+Select at least one client (`--claude`, `--codex`, `--goose`, `--opencode`, or
+`--all`), use a trusted absolute destination, and inspect a dry run before
+copying:
 
 ```sh
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode dry-run \
   --destination /absolute/path/to/destination
 
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode copy \
   --destination /absolute/path/to/destination
 
-zabctl agents install \
+zabctl agents install --claude --codex \
   --mode check \
   --destination /absolute/path/to/destination
 ```
@@ -114,7 +117,7 @@ zabctl agents install \
 The installer lays out the portable role instructions under `<destination>/agents`
 and the Agent Skills under `<destination>/.agents/skills`, recording ownership in
 `<destination>/.zabin/installer-manifest.json`; it also renders and installs
-every default client adapter (`claude_code` and `codex` — `.mcp.json`,
+the selected client adapters (with `--claude --codex`: `.mcp.json`,
 `.claude/settings.json`, `.claude/agents/*.md`, `.claude/workflows/*.js`,
 `.codex/config.toml`) in the same run, needing no credential environment
 variables to do so (the headers it writes are `${VAR}` reference strings, not
@@ -152,13 +155,13 @@ copy and check modes synchronize only the shared portable role instructions and
 Agent Skills, reporting activation `inactive`:
 
 ```sh
-zabctl agents install \
+zabctl agents install --goose \
   --mode dry-run \
   --destination /absolute/disposable/goose-dest
-zabctl agents install \
+zabctl agents install --goose \
   --mode copy \
   --destination /absolute/disposable/goose-dest
-zabctl agents install \
+zabctl agents install --goose \
   --mode check \
   --destination /absolute/disposable/goose-dest
 ```

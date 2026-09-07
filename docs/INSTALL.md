@@ -24,7 +24,8 @@ read as a supported-client guarantee.
 
   `agents` never contacts `zabin-server`; it works with no server, no
   credentials, and no config file.
-- Git — only for the fresh-machine `bootstrap` clone path below. Working
+- Git — only for the fresh-machine acquisition paths below (`install` when it
+  has to clone the bundle, and `bootstrap`). Working
   inside a zabin checkout needs the `.agents` submodule initialized: run
   `git submodule update --init` if it is not yet initialized.
 - Native clients (Claude Code, Codex, …) are needed only to *use* what gets
@@ -82,21 +83,27 @@ never when `--contracts-root` was given explicitly.
 
 **Using the bundle standalone:**
 
-For a machine without a zabin checkout — installing into another project, or
-working independently — clone zabin-agents directly or use `zabctl agents
-bootstrap`, which defaults to the public zabin-app/zabin-agents repository on
-a first run:
+For a machine without a zabin checkout, `install` acquires the bundle itself:
 
 ```sh
-zabctl agents bootstrap
+zabctl agents install --claude
 ```
 
-Pass `--repo <git-url>` to bootstrap from a fork or mirror instead.
+clones the public zabin-app/zabin-agents repository into `~/.zabin/zabin-agents`
+(fast-forwarding it on every later run) and installs the Claude Code adapter
+into your home directory. `--codex`, `--goose`, `--opencode` and `--all` select
+the other clients — at least one is required — and each default has exactly
+one override: `--destination <dir>` (install root), `--repo <git-url>` (a fork
+or mirror; also forces a clone even inside a checkout), `--bundle-dir <dir>`
+(where the clone is kept), and `--contracts-root <dir>` (an existing bundle,
+fully offline). See [One-command home install](#one-command-home-install)
+for the verified transcript. `zabctl agents bootstrap` remains the
+acquire-only command (same repository default, same clone directory).
 
-Outside a zabin checkout, name the bundle explicitly:
+Outside a zabin checkout, an existing bundle is named explicitly:
 
 ```sh
-zabctl agents install --contracts-root /path/to/zabin-agents \
+zabctl agents install --claude --codex --contracts-root /path/to/zabin-agents \
   --mode copy --destination /absolute/destination
 ```
 
@@ -111,18 +118,28 @@ silently substituted with a discovered one.
 
 ### Selecting client targets
 
-`install` lays every *default* client adapter unless told otherwise. `--target`
-replaces the default selection with a comma-separated list from
-`claude_code`, `codex`, `goose`, `opencode` (default `claude_code,codex`);
-`opencode` is opt-in — it is never installed unless named explicitly:
+`install` requires a client selection and lays only what is selected:
+`--claude` (Claude Code), `--codex`, `--goose`, `--opencode`, or `--all` for
+every supported client; the flags combine (`--claude --codex` is the pair
+earlier releases laid by default). `opencode` is opt-in — it is never
+installed unless named (`--opencode`, or `--all`). The comma-separated
+`--target claude_code,codex` spelling of earlier releases still parses but is
+hidden from `--help` and deprecated:
 
 ```sh
-zabctl agents install --contracts-root /path/to/zabin/.agents \
-  --mode copy --destination /absolute/destination --target claude_code
+zabctl agents install --claude --contracts-root /path/to/zabin/.agents \
+  --mode copy --destination /absolute/destination
 ```
 
-An unknown target — and `codex_admin_requirements`, which is never installable —
-is refused (exit 2) naming the allowed set. Verified:
+No selection at all is a usage error (exit 2). Verified:
+
+```text
+error: the following required arguments were not provided:
+  <--claude|--codex|--goose|--opencode|--all|--target <TARGET>>
+```
+
+An unknown `--target` name — and `codex_admin_requirements`, which is never
+installable — is refused (exit 2) naming the allowed set. Verified:
 
 ```text
 error: usage: ordinary installation target is forbidden: bogus_target (allowed targets: claude_code, codex, goose, opencode)
@@ -139,7 +156,7 @@ and the ownership manifest — install regardless of the selection.
 Everything an install writes — adapters, shared families, and the ownership
 manifest at `<destination>/.zabin/installer-manifest.json` — lives under
 `--destination`, so an isolated tree such as
-`--destination ~/.claude-zabin --target claude_code` touches nothing in the
+`--claude --destination ~/.claude-zabin` touches nothing in the
 operator's real `~/.claude`, `~/.codex`, `~/.agents`, or `~/.mcp.json`. Skill
 bridges (`.claude/skills/<name>`) are written as **relative** symlinks whenever
 the skills root sits under the destination (the default layout), so the
@@ -155,6 +172,8 @@ zabin checkout and wants its own portable copy of the bundle. It acquires
 diagnostics, and — only when told where — installs and renders adapters, in
 one flow. If you already have a zabin checkout with the submodule initialized, skip this section and use
 `--contracts-root <zabin>/.agents` directly, or run `zabctl agents <command>` from anywhere in the checkout for auto-discovery.
+For a *home* (user-level) install, `zabctl agents install --claude` does the
+acquisition itself — see [One-command home install](#one-command-home-install).
 
 A bare invocation clones the public zabin-app/zabin-agents repository (or, on
 a later run, whichever repository an earlier run recorded in
@@ -175,39 +194,49 @@ only clones/updates and diagnoses; it does **not** install anything. Run
 against a scratch `file://` remote:
 
 ```text
-Contracts bundle: <dest> (cloned from file://<remote>.git)
-  commit 604e4f3234d97c99d04746387cb4093cdb6eded5
+Contracts bundle: ~/.zabin/zabin-agents (cloned from file://<remote>/zabin-agents.git)
+  commit 071008b900d2c3853604baf368e136961beb619a
 Diagnostics: degraded (goose_compatibility)
-Installation: skipped — no --install-into was given, so only the bundle at <dest> was
-  acquired and diagnosed; name a project root to install the adapters, skills and role
-  instructions into
+Installation: skipped — no --install-into was given, so only the bundle at ~/.zabin/zabin-agents was acquired and diagnosed; name a project root to install the adapters, skills and role instructions into
 Recorded in ~/.zabin/agents.toml
+MCP endpoints:
+  conductor <the contracts bundle's own URL> (source: policy)
+  worker    <the contracts bundle's own URL> (source: policy)
 ```
 
-This is intentional, not a bug: there is deliberately no default
-`--install-into`, because the home layout that would pair naturally with the
-default `--destination ~/.agents` **overlaps the bundle itself** — the
-installer would try to write the bundle's own `agents/` and `.agents/skills/`
-sources back on top of themselves. Verified directly:
+This is intentional, not a bug: `bootstrap`'s job is the bundle, and a bare
+run deliberately guesses no install root. The clone lands in
+`~/.zabin/zabin-agents` (earlier releases used `~/.agents`, which a home
+install fills with its own `.agents/skills` output — the two no longer
+collide by default). One guard applies to `bootstrap --install-into` and
+`install --destination` alike: an install root that *contains* the bundle
+would write the bundle's own `agents/` and `.agents/skills/` sources back on
+top of themselves, and is refused before anything is written. Verified
+directly:
 
 ```sh
-zabctl agents bootstrap --repo <git-url> --destination ~/.agents --install-into ~/.agents
+zabctl agents install --claude --contracts-root ~/.zabin/zabin-agents --destination ~/.zabin/zabin-agents
 ```
 
 ```text
-error: usage: the install root ~/.agents would place the role instructions at
-  ~/.agents/agents, which is the bundle's own ~/.agents/agents — the bundle cannot be
-  installed into a tree that contains it; name an install root outside ~/.agents
+error: usage: the install root ~/.zabin/zabin-agents would place the role instructions at
+  ~/.zabin/zabin-agents/agents, which is the bundle's own ~/.zabin/zabin-agents/agents — the
+  bundle cannot be installed into a tree that contains it; name an install root outside
+  ~/.zabin/zabin-agents
 ```
 
-The same refusal fires for `--install-into "$HOME"` while `--destination`
-stays at its default `~/.agents`, because `$HOME` *contains* `~/.agents`:
+The same refusal fires for a home install while a bundle clone from an older
+release still sits at `~/.agents` (recorded in `~/.zabin/agents.toml`, or named
+with `--contracts-root`), because `$HOME` *contains* it:
 
 ```text
-error: usage: the install root $HOME would place the skills at $HOME/.agents/skills,
-  which is the bundle's own $HOME/.agents/skills — the bundle cannot be installed into a
-  tree that contains it; name an install root outside $HOME/.agents
+error: usage: the install root ~ would place the skills at ~/.agents/skills, which is the
+  bundle's own ~/.agents/skills — the bundle cannot be installed into a tree that contains it;
+  name an install root outside ~/.agents
 ```
+
+Move that clone aside (or point `--bundle-dir` / `bootstrap --destination` at
+`~/.zabin/zabin-agents`) and the home install proceeds.
 
 ### Recommended follow-up: project-level install (the common case)
 
@@ -243,27 +272,49 @@ When upstream moved, the check reports what an `--apply` would change;
 transcripts above are verified output of the current binary against a
 scratch `file://` remote.
 
-### Recommended follow-up: a Claude Code *home* (user-level) setup
+### One-command home install
 
 To make the rendered `.claude/agents`, `.mcp.json`, and `.codex/config.toml`
-available to every project (not just one), install into `$HOME` — but the
-bundle clone must live **outside** `$HOME`'s default `~/.agents` first, or
-you hit the exact overlap refusal shown above. Verified working pattern:
+available to every project (not just one), install into your home directory —
+which is exactly what a bare `install` does:
 
 ```sh
-zabctl agents bootstrap --repo <git-url> \
-  --destination ~/.local/share/zabin-agents \
-  --install-into "$HOME"
+zabctl agents install --claude
+# add --codex / --goose / --opencode, or --all for every client;
 # add --mcp-endpoint / --mcp-worker-endpoint when the daemon is not on the
 # default ports (see "Endpoints"); a home install is one endpoint set for
 # every project on this machine.
 ```
 
-With the bundle clone relocated, `$HOME/.agents/skills` and `$HOME/agents`
-are freshly-created installed output, not the bundle's own source tree, so
-the install proceeds normally (verified against scratch stand-ins for both
-paths). If you don't need a global install, prefer the project-level form
-above — it needs no relocation and is the pattern most users want.
+With no `--contracts-root` and no bundle discoverable from the working
+directory, `install` acquires one with `bootstrap`'s own fail-closed git flow:
+the repository recorded in `~/.zabin/agents.toml`, else the public
+zabin-app/zabin-agents repository, cloned (later: fast-forwarded) into
+`~/.zabin/zabin-agents`, diagnosed, and recorded together with the install
+root and the selected clients. Verified against a scratch `file://` remote
+and a scratch `$HOME` — stdout is the usual `install` JSON report, the
+acquisition and endpoint notices go to stderr:
+
+```text
+Acquired contracts bundle at ~/.zabin/zabin-agents (cloned from file://<remote>/zabin-agents.git, commit 071008b900d2c3853604baf368e136961beb619a)
+{"endpoints":[{"source":"policy","surface":"conductor","url":"http://127.0.0.1:50052/mcp"},{"source":"policy","surface":"worker","url":"http://127.0.0.1:50053/mcp-worker"}]}
+```
+
+leaving `~/.zabin/agents.toml`, `~/.zabin/installer-manifest.json`,
+`~/.claude/{agents,settings.json,skills,workflows}`, `~/.mcp.json`,
+`~/agents/` and `~/.agents/skills/` behind — and no `~/.codex`, because only
+`--claude` was selected. A second `zabctl agents install --claude` reports
+`already_current` and `"installation": "unchanged"`; `--mode check` reports
+`"installation": "verified"` (exit 0) and writes nothing.
+
+Each default has exactly one override: `--destination <dir>` for the install
+root, `--repo <git-url>` for a fork or mirror (it also forces a clone even
+when a bundle is discoverable from the working directory), `--bundle-dir
+<dir>` for where the clone is kept, and `--contracts-root <dir>` for an
+existing bundle (fully offline; conflicts with `--repo`/`--bundle-dir`).
+Inside a zabin checkout the discovered `.agents` submodule wins over the
+network, so a developer keeps installing the bundle they are editing. If you
+don't need a global install, prefer the project-level form above.
 
 `--target` (default `claude_code,codex`) selects which client adapters
 `bootstrap` installs; `--apply` is the consent flag that lets a
@@ -309,25 +360,23 @@ Checks:
 `DEGRADED` here exits **0** — it is the expected, honest steady state (Goose
 stays unsupported by design), not a failure to fix.
 
-Then install the shared roles, skills, and every default client adapter in
+Then install the shared roles, skills, and the selected client adapters in
 one step. Add `--contracts-root <zabin>/.agents` when the working directory
-isn't inside the checkout — for example installing into `~` for a global
-Claude Code setup:
+isn't inside the checkout:
 
 ```sh
-zabctl agents install --contracts-root <zabin>/.agents --mode dry-run --destination /absolute/destination
-zabctl agents install --contracts-root <zabin>/.agents --mode copy --destination /absolute/destination
-zabctl agents install --contracts-root <zabin>/.agents --mode check --destination /absolute/destination
+zabctl agents install --claude --codex --contracts-root <zabin>/.agents --mode dry-run --destination /absolute/destination
+zabctl agents install --claude --codex --contracts-root <zabin>/.agents --mode copy --destination /absolute/destination
+zabctl agents install --claude --codex --contracts-root <zabin>/.agents --mode check --destination /absolute/destination
 ```
 
-**Verified, and a correction to older assumptions:** `install` has no
-`--target` flag and needs no credential environment variables to run — it
-always lays out **both** `claude_code` and `codex` adapters, plus the
-portable `agents/` sources and `.agents/skills/`, and it succeeds even with
+**Verified:** `install` needs no credential environment variables to run —
+with `--claude --codex` it lays out **both** adapters, plus the portable
+`agents/` sources and `.agents/skills/`, and it succeeds even with
 `ZABIN_MCP_TOKEN`/`ZABIN_MCP_WORKER_TOKEN` unset (the credential headers it
 writes are the literal `${ZABIN_MCP_TOKEN}` / `${ZABIN_MCP_WORKER_TOKEN}`
 reference strings a client resolves at its own runtime, never a value). One
-`install --mode copy` run against a scratch destination produced:
+`install --claude --codex --mode copy` run against a scratch destination produced:
 
 ```text
 <dest>/agents/<13 role>.md
@@ -398,12 +447,12 @@ the real installer's output against a live daemon. It is not part of
 `DEFAULT_TARGETS` (`claude_code,codex`), so name it explicitly:
 
 ```sh
-zabctl agents install --contracts-root /path/to/zabin/.agents \
-  --mode copy --destination /absolute/destination --target opencode
+zabctl agents install --opencode --contracts-root /path/to/zabin/.agents \
+  --mode copy --destination /absolute/destination
 # --mcp-endpoint / --mcp-worker-endpoint apply here too (see "Endpoints")
 ```
 
-Verified — one `install --mode copy --target opencode` run against a scratch
+Verified — one `install --opencode --mode copy` run against a scratch
 destination produced:
 
 ```text
@@ -417,17 +466,17 @@ destination produced:
 Unlike the Claude Code target, there is no bridge or symlink step: OpenCode
 reads the portable `.agents/skills` directory and project-root `AGENTS.md`
 natively (`adapters/opencode/COMPATIBILITY.md` rows 2 and 3), so no
-`.opencode/skills` copy is written. Combine `opencode` with the default
-targets in one run — `--target claude_code,codex,opencode` — to install all
-three adapters together; `zabctl agents install` with no `--target` still
-only lays out `DEFAULT_TARGETS`, unchanged by OpenCode's addition to the
-allowed target set.
+`.opencode/skills` copy is written. Combine `opencode` with the other
+clients in one run — `--claude --codex --opencode`, or `--all` — to install
+them together; `--all` is the only selection that includes OpenCode without
+naming it.
 
 **Home-destination blast radius:** unlike the project-scoped skills bridge
 Claude Code uses, OpenCode auto-loads `$HOME/.agents/skills` as an external
 skill root for *every* project it opens, not just the one being installed
 into (`adapters/opencode/COMPATIBILITY.md` row 3b). Installing the
-`opencode` target with `--destination "$HOME"` therefore makes this
+`opencode` target into the home directory (`install`'s default destination)
+therefore makes this
 bundle's skills globally visible to every OpenCode session on the machine;
 use a project-scoped destination unless a machine-wide install is actually
 intended.
@@ -692,7 +741,8 @@ compares against what was installed, while a changed marker correctly shows
 as drift. An install with no override renders the policy defaults and drops
 the recorded key.
 
-A home-level install (`--destination "$HOME"` or `--install-into "$HOME"`)
+A home-level install (`install`'s default destination, or `bootstrap
+--install-into "$HOME"`)
 renders **one** endpoint set for every project on the machine. Per-project
 divergence belongs to the clients: Codex layers a trusted project's
 `.codex/config.toml` over `~/.codex/config.toml`, and Claude Code reads the
@@ -700,7 +750,7 @@ project's own `.mcp.json`.
 
 ```sh
 # Daemon bound to 50062/50063 instead of the defaults:
-zabctl agents install --contracts-root /path/to/zabin-agents \
+zabctl agents install --claude --codex --contracts-root /path/to/zabin-agents \
   --mode copy --destination "$HOME" \
   --mcp-endpoint http://127.0.0.1:50062/mcp \
   --mcp-worker-endpoint http://127.0.0.1:50063/mcp-worker
