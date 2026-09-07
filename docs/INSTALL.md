@@ -94,9 +94,11 @@ clones the public zabin-app/zabin-agents repository into `~/.zabin/zabin-agents`
 into your home directory. `--codex`, `--goose`, `--opencode` and `--all` select
 the other clients — at least one is required — and each default has exactly
 one override: `--destination <dir>` (install root), `--repo <git-url>` (a fork
-or mirror; also forces a clone even inside a checkout), `--bundle-dir <dir>`
-(where the clone is kept), and `--contracts-root <dir>` (an existing bundle,
-fully offline). See [One-command home install](#one-command-home-install)
+or mirror), `--bundle-dir <dir>` (where the clone is kept; either of the last
+two forces an acquisition), and `--contracts-root <dir>` (an existing bundle,
+fully offline). A home-directory install never uses a bundle it merely finds
+by walking up from the working directory — it names it on stderr and acquires
+its own; name the local one with `--contracts-root` to install it instead. See [One-command home install](#one-command-home-install)
 for the verified transcript. `zabctl agents bootstrap` remains the
 acquire-only command (same repository default, same clone directory).
 
@@ -225,18 +227,22 @@ error: usage: the install root ~/.zabin/zabin-agents would place the role instru
   ~/.zabin/zabin-agents
 ```
 
-The same refusal fires for a home install while a bundle clone from an older
-release still sits at `~/.agents` (recorded in `~/.zabin/agents.toml`, or named
-with `--contracts-root`), because `$HOME` *contains* it:
+A home install while a bundle clone from an older release still sits at
+`~/.agents` is refused the same way, *before* anything is cloned or recorded.
+When that clone is the one recorded in `~/.zabin/agents.toml` the message
+names the cause and the repair (verified):
 
 ```text
-error: usage: the install root ~ would place the skills at ~/.agents/skills, which is the
-  bundle's own ~/.agents/skills — the bundle cannot be installed into a tree that contains it;
-  name an install root outside ~/.agents
+error: usage: the contracts clone recorded in ~/.zabin/agents.toml is ~/.agents, which the
+  install root ~ contains — nothing was cloned or recorded; pass --bundle-dir
+  ~/.zabin/zabin-agents (or re-run `zabctl agents bootstrap --destination
+  ~/.zabin/zabin-agents`) to relocate it, or name an install root outside ~/.agents
 ```
 
-Move that clone aside (or point `--bundle-dir` / `bootstrap --destination` at
-`~/.zabin/zabin-agents`) and the home install proceeds.
+(a clone named with `--contracts-root ~/.agents` gets the generic refusal
+above). Relocate the clone with `--bundle-dir` or `bootstrap --destination`
+and the home install proceeds; `~/.zabin/agents.toml` is only ever rewritten
+by a run that installed successfully, so a refused run changes nothing.
 
 ### Recommended follow-up: project-level install (the common case)
 
@@ -286,18 +292,36 @@ zabctl agents install --claude
 # every project on this machine.
 ```
 
-With no `--contracts-root` and no bundle discoverable from the working
-directory, `install` acquires one with `bootstrap`'s own fail-closed git flow:
-the repository recorded in `~/.zabin/agents.toml`, else the public
-zabin-app/zabin-agents repository, cloned (later: fast-forwarded) into
-`~/.zabin/zabin-agents`, diagnosed, and recorded together with the install
-root and the selected clients. Verified against a scratch `file://` remote
-and a scratch `$HOME` — stdout is the usual `install` JSON report, the
-acquisition and endpoint notices go to stderr:
+With no `--contracts-root`, `install` acquires the bundle with `bootstrap`'s
+own fail-closed git flow: the repository recorded in `~/.zabin/agents.toml`,
+else the public zabin-app/zabin-agents repository, cloned (later:
+fast-forwarded) into `~/.zabin/zabin-agents` and diagnosed; the install root
+and the selected clients are recorded in `~/.zabin/agents.toml` only once the
+installation has succeeded. A bundle discoverable from the working directory
+is deliberately *not* used for a home install (it would make any checkout you
+happen to stand in the machine-wide agent runtime); it is named on stderr
+instead. Verified against a scratch `file://` remote and a scratch `$HOME` —
+stdout is the usual `install` JSON report, the notices go to stderr:
 
 ```text
 Acquired contracts bundle at ~/.zabin/zabin-agents (cloned from file://<remote>/zabin-agents.git, commit 071008b900d2c3853604baf368e136961beb619a)
+Recorded in ~/.zabin/agents.toml
 {"endpoints":[{"source":"policy","surface":"conductor","url":"http://127.0.0.1:50052/mcp"},{"source":"policy","surface":"worker","url":"http://127.0.0.1:50053/mcp-worker"}]}
+```
+
+Run from inside a checkout that carries `.agents/`, the same command first
+prints (verified):
+
+```text
+Note: a contracts bundle at <zabin>/.agents was found from the working directory but is not used for a home-directory install; pass --contracts-root <zabin>/.agents to install it, or --destination <dir> to install somewhere else
+```
+
+`--mode dry-run` and `--mode check` never clone, fetch, or record: an existing
+clone at the resolved directory is used as it is (stderr says so), and without
+one they refuse rather than acquire (verified, exit 2):
+
+```text
+error: usage: no contracts bundle at ~/.zabin/zabin-agents to plan against — --mode dry-run never clones; run `zabctl agents install --claude` once to acquire https://github.com/zabin-app/zabin-agents.git into ~/.zabin/zabin-agents, or pass --contracts-root
 ```
 
 leaving `~/.zabin/agents.toml`, `~/.zabin/installer-manifest.json`,
@@ -308,13 +332,13 @@ leaving `~/.zabin/agents.toml`, `~/.zabin/installer-manifest.json`,
 `"installation": "verified"` (exit 0) and writes nothing.
 
 Each default has exactly one override: `--destination <dir>` for the install
-root, `--repo <git-url>` for a fork or mirror (it also forces a clone even
-when a bundle is discoverable from the working directory), `--bundle-dir
-<dir>` for where the clone is kept, and `--contracts-root <dir>` for an
-existing bundle (fully offline; conflicts with `--repo`/`--bundle-dir`).
-Inside a zabin checkout the discovered `.agents` submodule wins over the
-network, so a developer keeps installing the bundle they are editing. If you
-don't need a global install, prefer the project-level form above.
+root, `--repo <git-url>` for a fork or mirror, `--bundle-dir <dir>` for where
+the clone is kept (either of those two forces an acquisition), and
+`--contracts-root <dir>` for an existing bundle (fully offline; conflicts with
+`--repo`/`--bundle-dir`). A bundle discovered from the working directory is
+used only together with an explicit `--destination`; to install the `.agents`
+submodule you are editing into your home, say `--contracts-root .agents`. If
+you don't need a global install, prefer the project-level form above.
 
 `--target` (default `claude_code,codex`) selects which client adapters
 `bootstrap` installs; `--apply` is the consent flag that lets a
