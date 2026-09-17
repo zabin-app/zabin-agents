@@ -12,7 +12,7 @@ Begin with `get_server_info {}`. It returns the live tool inventory for both sur
 |---|---|
 | Project | `get_server_info`, `register_project`, `resolve_project`, `get_pickup_context` |
 | Plan | `create_plan_draft`, `set_plan_section`, `add_phase`, `add_phase_tasks`, `finalize_plan`, `import_plan_document`, `get_plan`, `update_plan_document`, `create_board`, `complete_plan` |
-| Task ledger | `list_tasks`, `get_task`, `claim_next_task`, `claim_task`, `release_task`, `renew_task_lease`, `update_task_status`, `update_task_statuses`, `record_task_summary`, `record_task_verdict`, `record_task_verdicts`, `record_gate_result`, `record_gate_results`, `record_review_round`, `add_action_item`, `add_action_items`, `update_action_item`, `create_tasks`, `record_wave`, `update_wave_status`, `get_overlap_report`, `record_research_artifact`, `get_pipeline_state`, `search_context` |
+| Task ledger | `list_tasks`, `get_task`, `claim_next_task`, `claim_task`, `release_task`, `renew_task_lease`, `update_task`, `update_task_status`, `update_task_statuses`, `record_task_summary`, `record_task_verdict`, `record_task_verdicts`, `record_gate_result`, `record_gate_results`, `record_review_round`, `add_action_item`, `add_action_items`, `update_action_item`, `create_tasks`, `record_wave`, `update_wave_status`, `get_overlap_report`, `record_research_artifact`, `get_pipeline_state`, `search_context` |
 | Git ledger | `register_worktree`, `update_worktree_status`, `record_commits`, `list_workspaces` |
 | Human interaction | `post_progress_message`, `ask_user_questions`, `get_question_answers` |
 | Attachments | `attach_file`, `list_attachments`, `get_attachment`, `delete_attachment` |
@@ -90,6 +90,10 @@ Workers pass through `queued`, `executing`, and `in_review`, and retain the leas
 `update_task_status` may report `column_move_skipped` and `blocking_task_ids`, serialized only when meaningful — check for their presence rather than assuming they are always there. A skip indicates unfinished dependencies and must be investigated. `completed` always moves to the terminal column; a non-empty blocker list on a completed response signals out-of-order completion. The batched `update_task_statuses` does not carry either field per entry — its per-entry ack is `id`/`status`/`updated_at` only — so when a blocker signal matters, use the singular call or a follow-up read.
 
 Existing boards may not have a column corresponding to every status. Absence of a mapped column is different from dependency-driven `column_move_skipped`; do not infer status from board column names.
+
+## Spec amendment
+
+`update_task` amends a card's `write_files` (1..=25 validated repository-relative paths, never an empty list), `description`, and `complexity` — supply at least one — only while the card is `pending` or `ready` with no live lease. It is one compare-and-set write: the status window and the lease predicate sit in the statement's own `WHERE` clause, so a card claimed between the conductor's read and the write is refused rather than overwritten. A held lease answers `conflict`; a card already past `ready` answers `failed_precondition` (the fix-card path is the remedy for a card in flight). Each amendment stamps `amended_at` and `amended_by` into the card's metadata; `get_task` exposes both and `get_overlap_report`'s scope rows expose `amended_at`, so a stale declaration is distinguishable from a fresh one, and the reply carries `previous_write_files` for the scope a dispatch decision was based on. Title, status, and `action_item_id` are not amendable. The tool is conductor-only; the worker subset is unchanged.
 
 ## Lease model
 

@@ -79,10 +79,10 @@ Once approved, call `create_board` with the verified revision as `expected_revis
 
 Join plan drafts to board cards by phase, sequence, and title. Page all reads. Before dispatching each card:
 
-1. Call `get_task` and verify that `description` is complete and `write_files` is non-empty.
+1. Call `get_task` and verify that `description` is complete and `write_files` is non-empty. When the description is not self-contained, or the declared scope does not match the work the card actually needs (a file a downstream card depends on, a stub module, a test file), call `update_task` to correct the card — it is accepted only while the card is `pending`/`ready` with no live lease — then continue. Never carry the correction in the dispatch stub: the card is the single copy of the contract (State 2).
 2. Verify relationships and unfinished blockers. Only `ready` cards are dispatchable.
 3. Check active workspaces and claimed tasks for collisions.
-4. Call `get_overlap_report` for exactly the candidate wave, freshly, before every dispatch without exception. The report is server-computed from the cards' own `write_files`; an earlier wave's report, a report for a different task set, or your own reading of the file lists authorizes nothing. Refuse to dispatch a wave you have not run this report for — it is the structural replacement for a hand-written overlap analysis, so you no longer write one and no longer get to skip one.
+4. Call `get_overlap_report` for exactly the candidate wave, freshly, before every dispatch without exception. The report is server-computed from the cards' own `write_files`; an earlier wave's report, a report for a different task set, or your own reading of the file lists authorizes nothing. Refuse to dispatch a wave you have not run this report for — it is the structural replacement for a hand-written overlap analysis, so you no longer write one and no longer get to skip one. A report computed before an amendment is stale: re-run it after any `update_task`.
 5. If `unscoped` is non-empty the report is never `parallel_safe`. Declare that card's `write_files` or schedule it sequentially; an undeclared write scope is not a disjoint one.
 6. If `overlaps` contains a pair, split the pair across waves or run it sequentially. Only `parallel_safe:true` authorizes parallel worktrees.
 

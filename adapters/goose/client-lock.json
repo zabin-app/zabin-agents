@@ -63,8 +63,8 @@
       "extension_name": "zabin-conductor",
       "normalized_extension_name": "zabin-conductor",
       "credential_environment": "ZABIN_MCP_TOKEN",
-      "expected_tool_count": 63,
-      "expected_inventory_sha256": "9f12230c7ffeafaa16257e28a95a48e3ac4f9425a0171ec45a1ea3928210f0e9"
+      "expected_tool_count": 64,
+      "expected_inventory_sha256": "0e38f97adf2b85877250552c69e423ae8a7665e4f58c3337e83c8a1da5981e5b"
     },
     "worker": {
       "extension_name": "zabin-worker",

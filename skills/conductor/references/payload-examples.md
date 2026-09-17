@@ -133,6 +133,18 @@ Questionnaire answers inform design but never constitute plan approval.
 
 Supply exactly one selector: `task_ids` or `board_id`.
 
+`update_task` — correct a card's declared scope before dispatch (here: a stub module the plan draft left undeclared); `description` and `complexity` are omitted and stay as they are
+
+```json
+{
+  "project_id": "prj_example",
+  "task_id": "tsk_rotation",
+  "write_files": ["src/rotation/mod.rs", "src/rotation/consume.rs", "tests/rotation.rs"]
+}
+```
+
+The reply carries `previous_write_files` (the scope any earlier dispatch decision was based on) and `amended_at`/`amended_by`; re-run `get_overlap_report` afterwards, because a report computed before the amendment is stale. Accepted only while the card is `pending`/`ready` with no live lease — `conflict` on a held lease, `failed_precondition` once the card is in flight.
+
 ## Record a wave
 
 `record_wave`

@@ -98,6 +98,7 @@
         {"name": "start_task", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_action_item", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "update_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "update_task", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "update_task_status", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_task_statuses", "group": "task_ledger", "risk_class": "task_scoped_write", "approval": "scope_granted", "mutates_state": true},
         {"name": "update_wave_status", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
