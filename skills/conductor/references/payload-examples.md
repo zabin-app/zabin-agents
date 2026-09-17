@@ -143,7 +143,7 @@ Supply exactly one selector: `task_ids` or `board_id`.
 }
 ```
 
-The reply carries `previous_write_files` (the scope any earlier dispatch decision was based on) and `amended_at`/`amended_by`; re-run `get_overlap_report` afterwards, because a report computed before the amendment is stale. Accepted only while the card is `pending`/`ready` with no live lease — `conflict` on a held lease or when the card changed since it was read (re-read and retry), `failed_precondition` once the card is past `ready`.
+The reply carries `previous_write_files` (the scope any earlier dispatch decision was based on) and `amended_at`/`amended_by`; re-run `get_overlap_report` afterwards, because a report computed before the amendment is stale. Accepted only while the card is `pending`/`ready` with no live lease — `conflict` on a held lease or when the card changed between the tool's own read and its write (re-read and retry; an earlier `get_task` is not a guard), `failed_precondition` once the card is past `ready`.
 
 ## Record a wave
 
