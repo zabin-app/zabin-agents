@@ -54,11 +54,13 @@ For three or more questions, an unknown affected area, or load-bearing assumptio
 
 For orientation, deduplication, and prior-art questions — has this already been discussed, does a research artifact or action item already cover it — start with `search_context` rather than paging the ledger tools directly: it is a two-stage read, a snippet first and a full fetch only for the artifact you are about to act on. This narrows the field; it does not replace the authoritative reads in Invariant 4, and once a specific card or document is the thing being implemented against, read it in full rather than from a snippet.
 
-Immediately persist the synthesis with `record_research_artifact`. Store claim status (`verified`, `contested`, or `refuted`) and evidence in `body`; the tool has no separate claims field. Attach supporting files with `attach_file` when useful. Refuted, contested, and unverifiable claims belong in plan risks, not as facts in the plan body.
+Immediately persist the synthesis with `record_research_artifact`. Store claim status (`verified`, `contested`, or `refuted`) and evidence in `body`; the tool has no separate claims field. Attach supporting files with `attach_file` when useful. Refuted, contested, and unverifiable claims belong in plan risks, not as facts in the plan body. State 1 research predates the plan and is recorded without `plan_id`; keep every returned `rsa_…` id, because State 2 is the only step that attaches it to the plan.
 
 ## State 2 — Plan and approval
 
 Build plans incrementally using `create_plan_draft`, `set_plan_section`, `add_phase`, and `add_phase_tasks`; then call `finalize_plan`. Use [Planning payloads](templates.md).
+
+Pass every State 1 artifact id to `create_plan_draft` as `research_artifact_ids`. A plan's research — what its Docs view shows the operator — is exactly the artifacts linked there, recorded with its `plan_id`, or attached later with `link_research_artifacts`. `finalize_plan` refuses a plan with none. `no_research_reason` exists for a plan that genuinely had no research; it is recorded and shown to the operator, so it is never a way around linking research that exists.
 
 Every task draft must contain:
 
@@ -172,7 +174,7 @@ Before dispatching new follow-up investigation, check `search_context` for prior
 For each eligible round:
 
 1. Dispatch follow-up investigation for only the in-scope findings.
-2. Persist contested and not-reproduced diagnoses with `record_research_artifact`. If no taskable diagnoses remain, stop and escalate.
+2. Persist contested and not-reproduced diagnoses with `record_research_artifact`, scoped with the reviewed plan's `plan_id` and `phase_id` so they appear with the plan's research. If no taskable diagnoses remain, stop and escalate.
 3. Create fix cards on the same board with exact `write_files`, complexity, and `action_item_id`. There is no new plan approval gate.
 4. Re-enter State 3 and State 4 for those cards only, including a fresh overlap report and wave. Never recursively review the fix wave as a new phase.
 5. Re-review the original `<PHASE_BASE>..HEAD` in convergence mode using the previous review as context. Record round `1` or `2`.

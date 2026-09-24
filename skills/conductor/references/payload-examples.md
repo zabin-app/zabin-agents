@@ -68,7 +68,7 @@ Filter to `active`/`idle` for routine orientation; widen only when reconciling a
 
 ## Research
 
-`record_research_artifact`
+`record_research_artifact` — State 1 research predates the plan, so it is recorded without `plan_id` and its returned `artifact_id` is carried into `create_plan_draft`. Research recorded once the plan exists takes its `plan_id`, as here:
 
 ```json
 {
@@ -92,6 +92,42 @@ Filter to `active`/`idle` for routine orientation; widen only when reconciling a
   "content_base64": "eyJjb25jdXJyZW50X3JlcXVlc3RzIjoyfQ=="
 }
 ```
+
+## Link research to its plan
+
+`create_plan_draft` — carry every State 1 artifact into the plan shell; the ids are validated before the plan row exists:
+
+```json
+{
+  "project_id": "prj_example",
+  "title": "Rotate refresh tokens safely",
+  "description": "Add one-time refresh-token rotation with replay detection.",
+  "research_artifact_ids": ["rsa_example_sweep", "rsa_example_question"]
+}
+```
+
+`link_research_artifacts` — attach existing artifacts to an existing plan (1–50 ids, same project; idempotent: the response splits `linked` from `already_linked`):
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "artifact_ids": ["rsa_example_verification"],
+  "linked_by": "conductor"
+}
+```
+
+`finalize_plan` with a waiver — only for a plan that genuinely had no research; without research and without this field the call is refused `failed_precondition`:
+
+```json
+{
+  "project_id": "prj_example",
+  "plan_id": "fplan_example",
+  "no_research_reason": "One-line typo fix requested directly by the user; no investigation was needed."
+}
+```
+
+The reason is recorded as a plan-scoped `summary` artifact titled "No pre-plan research recorded" and reported back as `research_waiver_artifact_id`. A reason supplied for a plan that already has research is ignored and noted.
 
 ## Human design question
 

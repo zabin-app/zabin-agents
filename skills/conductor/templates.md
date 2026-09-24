@@ -16,7 +16,7 @@ See [Payload examples](references/payload-examples.md) for lifecycle calls and [
 }
 ```
 
-Call `record_research_artifact`. Omit `phase_id` until one exists; use a returned `plan_id` when the artifact belongs to the whole plan.
+Call `record_research_artifact` and keep every returned `rsa_…` id. State 1 research normally predates the plan, so it is recorded without `plan_id`; nothing links it later unless you carry the ids into the plan shell below. Research recorded after the draft exists takes the returned `plan_id` (and `phase_id` once a phase exists).
 
 ## Create the plan shell
 
@@ -24,11 +24,12 @@ Call `record_research_artifact`. Omit `phase_id` until one exists; use a returne
 {
   "project_id": "prj_example",
   "title": "Rotate refresh tokens safely",
-  "description": "Add one-time refresh-token rotation with replay detection."
+  "description": "Add one-time refresh-token rotation with replay detection.",
+  "research_artifact_ids": ["rsa_example_sweep", "rsa_example_question"]
 }
 ```
 
-Call `create_plan_draft` and retain the returned `plan_id` and revision.
+Call `create_plan_draft` with every State 1 artifact id in `research_artifact_ids` and retain the returned `plan_id` and revision. The ids are validated before the plan exists, so a wrong id refuses the call without leaving a draft. The plan's Docs view lists exactly the research linked here, recorded with its `plan_id`, or linked later with `link_research_artifacts`.
 
 ## Set scalar and list sections
 
@@ -130,6 +131,8 @@ Call `add_phase_tasks`. Reject a draft that lacks a self-contained description o
   "plan_id": "fplan_example"
 }
 ```
+
+`finalize_plan` refuses (`failed_precondition`) a draft with no research linked or recorded against it. Link what State 1 produced rather than waiving: `link_research_artifacts {project_id, plan_id, artifact_ids}` attaches existing artifacts and is idempotent. Only a plan that genuinely had no research passes `"no_research_reason": "<why>"`; the server records that reason as a plan-scoped `summary` artifact titled "No pre-plan research recorded", so the operator sees it.
 
 Call `finalize_plan`, pause for human approval, then confirm approval with the minimal approval-check read:
 

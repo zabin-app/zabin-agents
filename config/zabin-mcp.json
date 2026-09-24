@@ -71,6 +71,7 @@
         {"name": "get_server_info", "group": "project", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "get_task", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "import_plan_document", "group": "plan", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
+        {"name": "link_research_artifacts", "group": "task_ledger", "risk_class": "durable_write", "approval": "auto", "mutates_state": true},
         {"name": "list_attachments", "group": "attachment", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_project_docs", "group": "document", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
         {"name": "list_tasks", "group": "task_ledger", "risk_class": "read_only", "approval": "auto", "mutates_state": false},
