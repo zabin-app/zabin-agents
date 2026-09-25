@@ -9,7 +9,7 @@ Host-specific translation for one client. The [conductor skill](../SKILL.md) and
 | `mcp.discover`, `mcp.call` | The configured MCP servers, addressed as `mcp__<server>__<tool>` |
 | `filesystem.read`, `filesystem.search` | Read, Glob, Grep |
 | `filesystem.write` | Write, Edit |
-| `process.run`, `git.*` | Bash, in the main loop for every topology and merge operation |
+| `process.run`, `git.*` | Bash, in the main loop for every topology and merge operation; `git worktree add <repo>/.claude/worktrees/<slug> …` is the only spelling of `git.create_worktree` — the same directory Claude Code's own `isolation: worktree` uses, never `../<repo>-wt-<slug>` |
 | `agent.dispatch` | A workflow program dispatched by name, or a single subagent dispatched directly |
 | `agent.wait` | The background completion notification a dispatched program raises; a blocking monitor for a long command |
 | `human.prompt` | A pause in the main chat |
@@ -38,7 +38,7 @@ Dispatch one by name with the Workflow tool — `Workflow({name: "review-diff", 
 | [Follow-up investigation](../workflows/followup-investigate.md) | `followup-investigate` | `{issues:[{label, text}]}` | `{taskable, contested, notReproduced}` |
 | [Documentation exploration](../workflows/docs-explore.md) | `docs-explore` | `{subsystems:[{label, path}], scale?, unitCount?, packageCount?, stacks?, pinnedStructure?}` | `{maps, recommendedStructure, rationale}` |
 
-`implement-wave` carries the dispatch text in `tasks[].content` — the identity stub described in the skill's State 4, never a `path`. The legacy `path` form hands an implementor a filesystem location outside its own worktree, which is how work lands in the user's primary checkout. `worktreePath` names a worktree the main loop pre-created; worktree creation, merging, and removal stay in the main loop either way. `tasks[].objective`/`acceptanceCriteria`/`writeFiles` carry the card's validation contract, read by the conductor at State 3, for the program's **validator stage only** — the task-validator role has no MCP access and fails closed without them, and they never reach the implementor prompt (the card fetched via `start_task` stays the implementor's single spec). `review-diff`'s `taskFiles` stays empty: task text lives in Zabin.
+`implement-wave` carries the dispatch text in `tasks[].content` — the identity stub described in the skill's State 4, never a `path`. The legacy `path` form hands an implementor a filesystem location outside its own worktree, which is how work lands in the user's primary checkout. `worktreePath` names a worktree the main loop pre-created at `<repo>/.claude/worktrees/<slug>` — the program refuses any other location, because a sibling-directory worktree pollutes the parent directory and escapes repository-scoped cleanup; worktree creation, merging, and removal stay in the main loop either way. Omitting `worktreePath` lets the harness create the worktree itself under the same `.claude/worktrees/` directory, cut from `main` and synced by the program's step 0. `tasks[].objective`/`acceptanceCriteria`/`writeFiles` carry the card's validation contract, read by the conductor at State 3, for the program's **validator stage only** — the task-validator role has no MCP access and fails closed without them, and they never reach the implementor prompt (the card fetched via `start_task` stays the implementor's single spec). `review-diff`'s `taskFiles` stays empty: task text lives in Zabin.
 
 ## Tier strings
 

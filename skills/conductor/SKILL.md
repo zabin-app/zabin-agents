@@ -98,7 +98,7 @@ Select a host model tier by the portable registry, not a concrete identifier: `t
 
 Use the host capability contract in [Host capabilities](references/host-capabilities.md):
 
-- a parallel-safe set uses `git.create_worktree`, then one `agent.dispatch` per card and `agent.wait` for results;
+- a parallel-safe set uses `git.create_worktree` — destination `<repository>/.claude/worktrees/<slug>`, never a sibling of the repository (see the [Worktree destination](references/host-capabilities.md#worktree-destination) rule) — then one `agent.dispatch` per card and `agent.wait` for results;
 - overlapping or single-card work runs sequentially and must not race the working branch;
 - dispatch only the identity stub: `project_id`, `task_id`, exact `agent_name`, the worker surface to call, worktree path, branch, base branch/SHA, lease TTL, the lifecycle steps, and verification/doc-routing context. Do not paste a second copy of the spec — the card is the contract (State 2), and the stub carries only what the card cannot know.
 - the wave dispatch additionally carries each card's objective, acceptance criteria, and authoritative write scope for the program's **validator stage** — the task validator is forbidden the MCP surface and fails closed without explicit criteria, so the conductor, who verified the card in State 3, supplies them. This is validator input taken from the card at dispatch time, not a second spec copy: it never reaches the implementor, whose single spec remains the card fetched via `start_task`.

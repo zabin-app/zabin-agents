@@ -14,7 +14,7 @@ These names are portable semantic identifiers. They are not MCP tool names and a
 | `filesystem.search` | root, pattern/glob | matching paths/lines | Any scoped role |
 | `filesystem.write` | path, bounded edit | changed path/evidence | Only a role whose declared scope contains the path |
 | `git.inspect` | repository/worktree, query | branch, SHA, status, diff, or worktree metadata | Main loop and read-only roles |
-| `git.create_worktree` | repository, branch, base ref, destination | isolated path, branch, resolved base SHA | Main loop only |
+| `git.create_worktree` | repository, branch, base ref, destination (`<repository>/.claude/worktrees/<slug>`, see [Worktree destination](#worktree-destination)) | isolated path, branch, resolved base SHA | Main loop only |
 | `git.commit` | worktree, explicit paths, message | source commit SHA | Worker for its scoped worktree; main loop for inline work |
 | `git.squash_merge` | primary checkout, source branch | merged tree or conflict evidence | Main loop only |
 | `git.remove_worktree` | exact registered path | removal result | Main loop only, after durable reconciliation |
@@ -25,6 +25,14 @@ These names are portable semantic identifiers. They are not MCP tool names and a
 | `human.wait_event` | project/scope event filter and timeout | wake-up event or timeout | Main loop only; event is never proof of approval |
 
 Optional research operations include `web.search` and `web.fetch`, subject to the external-research role's source policy.
+
+## Worktree destination
+
+Every worktree the main loop creates lives **inside the repository it checks out**, at `<repository>/.claude/worktrees/<slug>` — the repository root that owns the branch, then the literal `.claude/worktrees/` directory, then one directory per card named by the card's slug. The rule has no exceptions for phase or wave; a feature-branch checkout the conductor keeps for merges and gates uses the same directory with its own slug.
+
+Never place a worktree beside the repository (`../<repo>-wt-<slug>`, `../<repo>-worktrees/…`, or any other sibling naming): a sibling pollutes the parent directory, survives cleanup that targets the repository, and is invisible to tooling that scopes itself to the repository root. Hosts whose own isolation primitive creates worktrees use the same `.claude/worktrees/` directory, so conductor-created and host-created worktrees share one location, and `.claude/` is already the host-local, version-control-ignored directory in every project. A worktree of a *different* repository (an application repository reached from the session repository) follows the same rule relative to that repository's root.
+
+Per-worktree scratch and build caches are not worktrees and stay out of `.claude/worktrees/`; put them under the project's cache root and name them by slug. Remove a finished worktree by its exact registered path with `git.remove_worktree`, then prune stale metadata.
 
 ## Dispatch assignment schema
 
@@ -37,7 +45,7 @@ Every bounded assignment includes enough identity to audit and contain it:
   "project_id": "prj_example",
   "task_id": "tsk_example",
   "agent_name": "implementor@runner/task-05",
-  "worktree": "/absolute/path/to/worktree",
+  "worktree": "/absolute/path/to/repository/.claude/worktrees/task-05",
   "branch": "work/task-05",
   "base_branch": "feature/base",
   "base_sha": "42a4056677e5bcdc00b42dcb62cfa4cf0d4ddbb1",
@@ -56,7 +64,7 @@ Research, review, validation, and integration assignments use their registered r
 Parallel work is authorized only when `get_overlap_report` returns `parallel_safe:true` for the exact task set.
 
 1. The main loop resolves the working branch and base SHA with `git.inspect`.
-2. It creates one isolated worktree per card with `git.create_worktree`.
+2. It creates one isolated worktree per card with `git.create_worktree`, at the destination fixed below.
 3. It issues independent `agent.dispatch` operations and retains every dispatch id.
 4. It collects all results with `agent.wait`; a missing or partial result fails toward caution.
 5. It validates each branch independently before any merge.

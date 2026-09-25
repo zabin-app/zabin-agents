@@ -11,7 +11,7 @@ The conductor must already have:
 - satisfied dependencies and `ready` status;
 - a fresh `get_overlap_report` for exactly this task set with `parallel_safe: true` and no `unscoped` entries;
 - a recorded wave with the exact `base_sha` and status `running`;
-- one isolated worktree per task, created by the main loop from that base.
+- one isolated worktree per task, created by the main loop from that base at `<repository>/.claude/worktrees/<slug>` (the conductor's [worktree destination](../references/host-capabilities.md#worktree-destination) rule; a sibling-directory path is a precondition failure).
 
 If any precondition is absent, return `blocked` without spawning. Overlapping or unscoped tasks use the conductor's sequential path, not this program.
 
@@ -34,7 +34,7 @@ The registered inputs illustrated below are exact and closed.
 
 ```json
 {
-  "implementor": {"project_id":"prj_example","task_id":"tsk_example","worktree":"/worktrees/task","write_files":["src/file"]},
+  "implementor": {"project_id":"prj_example","task_id":"tsk_example","worktree":"/repo/.claude/worktrees/task","write_files":["src/file"]},
   "task_validator": {"objective":"Validate task tsk_example","diff_range":"base..head","acceptance_criteria":["criterion"]}
 }
 ```

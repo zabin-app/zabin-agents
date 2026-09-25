@@ -34,6 +34,8 @@ export const meta = {
 // the implementor is dispatched WITHOUT harness worktree isolation and told to cd there; the
 // branch is already cut from `baseRef`, so there is no sync step. The conductor owns worktree
 // creation, merging, and removal. When absent, behavior is the original harness-worktree flow.
+// A pre-created worktree MUST live at <repo>/.claude/worktrees/<slug> — the same directory the
+// harness uses — never as a sibling of the repo (../<repo>-wt-<slug>); any other path is refused.
 //
 // Completion summaries come back through the `completionSummary` schema field; the CONDUCTOR
 // writes them to the task file. An implementor must never write outside its worktree, so it
@@ -48,6 +50,15 @@ if (!WORKING_BRANCH || !TASKS.length) {
   return []
 }
 const BASE_REF = A.baseRef || WORKING_BRANCH
+
+// Conductor-created worktrees live at <repo>/.claude/worktrees/<slug>; refuse anything else so the
+// destination rule is enforced rather than remembered (sibling dirs polluted parent folders before).
+const WT_DIR_RE = /\/\.claude\/worktrees\/[^/]+\/?$/
+const misplaced = TASKS.filter(t => t.worktreePath && !WT_DIR_RE.test(t.worktreePath))
+if (misplaced.length) {
+  log(`REFUSED: worktreePath must be <repo>/.claude/worktrees/<slug> (the harness worktree directory), never a sibling of the repository. Offending: ${misplaced.map(t => `${t.slug}=${t.worktreePath}`).join(', ')}. Re-create the worktree(s) at the required path and dispatch again.`)
+  return []
+}
 
 const legacy = TASKS.filter(t => !t.content && t.path).length
 if (legacy) log(`WARNING: ${legacy}/${TASKS.length} task(s) passed by path instead of inlined content — those implementors can see the primary checkout. Prefer args.tasks[].content.`)
