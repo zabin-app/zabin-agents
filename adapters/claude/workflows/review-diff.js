@@ -9,7 +9,12 @@ export const meta = {
 }
 
 // args: { diffRange, taskFiles: string[], changeType: 'feature'|'bug', previousReview?: string,
-//         docs?: string[], repoRoot?: string }
+//         docs?: string[], repoRoot?: string, dimensions?: [{ key, agentType, model }] }
+//   dimensions — optional override for non-software artifacts. When supplied and non-empty it REPLACES
+//   the built-in code dimensions (no bug-fix dimension is added); each entry needs key + agentType
+//   (model: 'haiku'|'sonnet'|'opus'), else the run fails fast with an empty result. Each finding's
+//   refuter panel then runs the SAME agentType as the dimension that raised it, and review/refuter
+//   prompts use domain-neutral wording ('change'/'artifact'). Omitted: behaviour is unchanged.
 //   repoRoot — absolute path of the repo the diff lives in, when it is NOT the session repo
 //   (e.g. an app repo nested inside the checkout). Reviewers and refuters are told to run every
 //   git command as `git -C <repoRoot> ...`. Same cross-repo extension implement-wave.js carries.
@@ -24,24 +29,35 @@ const CHANGE_TYPE = A.changeType || 'feature'
 const PREV = A.previousReview
 const DOCS = Array.isArray(A.docs) ? A.docs.filter(Boolean) : []
 const REPO_ROOT = A.repoRoot
+const CUSTOM_DIMS = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : null
 const GIT_CLAUSE = REPO_ROOT
   ? `The diff lives in the repo at ${REPO_ROOT} (NOT the session repo) — run EVERY git command as \`git -C ${REPO_ROOT} ...\` and read source files under that root. `
   : ''
 
 const DOCS_CLAUSE = DOCS.length
   ? `Reference these docs for standards (already resolved for the units this diff touches — read these rather than hunting for others):\n${DOCS.map(d => `  - ${d}`).join('\n')}`
+  : CUSTOM_DIMS
+  ? `Reference the project's documentation for the standards that apply to this artifact (read only what is relevant to the changed files).`
   : `Reference docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md, docs/REVIEW_FOCUS.md for standards. If docs/DOC_POLICY.md exists, the project's docs are split: map the changed files to their doc unit via its unit table and read that unit's doc too — the root docs/ARCHITECTURE.md is only an index and will not contain module detail.`
 
 // Dimensions map to the review agentTypes. Agents carry no model in frontmatter — the
 // conductor's model strategy sets tiers here (sonnet workhorses; logic + security on opus).
-const DIMENSIONS = [
+const BUILTIN_DIMENSIONS = [
   { key: 'architecture', agentType: 'architecture-enforcer', model: 'sonnet' },
   { key: 'quality', agentType: 'code-quality-inspector', model: 'sonnet' },
   { key: 'logic', agentType: 'logic-reasoning-checker', model: 'opus' },
   { key: 'risks', agentType: 'risks-tradeoffs-analyzer', model: 'sonnet' },
   { key: 'security', agentType: 'security-reviewer', model: 'opus' },
 ]
-if (CHANGE_TYPE === 'bug') DIMENSIONS.unshift({ key: 'bugfix', agentType: 'bug-fix-reviewer', model: 'sonnet' })
+if (CHANGE_TYPE === 'bug') BUILTIN_DIMENSIONS.unshift({ key: 'bugfix', agentType: 'bug-fix-reviewer', model: 'sonnet' })
+
+// Caller-supplied dimensions (non-software roles) replace the built-in list wholesale.
+const MODELS = ['haiku', 'sonnet', 'opus']
+if (CUSTOM_DIMS && !CUSTOM_DIMS.every(d => d && typeof d.key === 'string' && d.key && typeof d.agentType === 'string' && d.agentType && (d.model === undefined || MODELS.includes(d.model)))) {
+  log(`review-diff REFUSED: every args.dimensions entry needs a non-empty key and agentType (model, if given, one of ${MODELS.join('|')}). Got: ${JSON.stringify(A.dimensions)}`)
+  return { verdict: null, diffRange: DIFF, reReview: !!PREV, confirmed: [], minors: [], perDimension: [] }
+}
+const DIMENSIONS = CUSTOM_DIMS ? CUSTOM_DIMS.map(d => ({ key: d.key, agentType: d.agentType, model: d.model || 'sonnet' })) : BUILTIN_DIMENSIONS
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -76,12 +92,13 @@ const REFUTE_SCHEMA = {
   },
 }
 
-const reviewPrompt = (d) => `Review the following code change as your dimension (${d.key}).
+const WHAT = CUSTOM_DIMS ? 'change' : 'code change'
+const reviewPrompt = (d) => `Review the following ${WHAT} as your dimension (${d.key}).
 
 Diff range: git diff ${DIFF}
 ${GIT_CLAUSE ? GIT_CLAUSE + '\n' : ''}Task files (acceptance criteria / scope): ${TASK_FILES.join(', ') || '(none provided)'}
 ${PREV ? `\nRE-REVIEW MODE — a previous review exists at: ${PREV}. Verify prior Critical/Major findings are resolved and review THIS fix diff with full rigor. Do NOT re-litigate unchanged code; new issues in untouched code are out of scope unless newly CRITICAL.\n` : ''}
-Treat the diff as the source of truth — distinguish code introduced by this change from pre-existing code (you have read-only git access). ${DOCS_CLAUSE} Rate each finding's severity honestly (Critical / Major / Minor).`
+Treat the diff as the source of truth — distinguish ${CUSTOM_DIMS ? 'material' : 'code'} introduced by this change from pre-existing ${CUSTOM_DIMS ? 'material' : 'code'} (you have read-only git access). ${DOCS_CLAUSE} Rate each finding's severity honestly (Critical / Major / Minor).`
 
 // Pipeline: each dimension reviews, then its Critical/Major findings are adversarially verified
 // as soon as that dimension returns — no barrier between dimensions.
@@ -97,7 +114,7 @@ const reviewed = await pipeline(
       parallel([0, 1, 2].map(n => () =>
         agent(
           `A ${d.key} reviewer flagged this ${f.severity} finding on diff \`${DIFF}\`:\n${GIT_CLAUSE ? '\n' + GIT_CLAUSE + '\n' : ''}\nTitle: ${f.title}\nFile: ${f.file || '?'}:${f.line || '?'}\nProblem: ${f.problem}\n\nTry to REFUTE it: is this actually a real problem introduced by THIS diff? Default refuted=true if it is a false positive, pre-existing, or a misread.`,
-          { model: 'haiku', label: `verify:${d.key}#${n}`, phase: 'Verify', schema: REFUTE_SCHEMA }
+          { ...(CUSTOM_DIMS ? { agentType: d.agentType } : {}), model: 'haiku', label: `verify:${d.key}#${n}`, phase: 'Verify', schema: REFUTE_SCHEMA }
         )
       )).then(votes => {
         // Dead voters (null) abstain — an infra failure is not a refutation. A finding is

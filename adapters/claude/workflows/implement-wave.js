@@ -12,7 +12,9 @@ export const meta = {
 //   workingBranch: string,          // branch the conductor is on; worktrees sync to it
 //   baseRef?: string,               // ref pre-created worktrees were cut from / validators diff against (default: workingBranch)
 //   tasks: [{ slug, complexity, agentType, content?, path?, worktreePath?,
-//             objective?, acceptanceCriteria?, writeFiles? }]
+//             objective?, acceptanceCriteria?, writeFiles? }],
+//   validatorType?: string,         // agentType of the validator stage (default 'task-validator')
+//   validatorModel?: string,        // model of the validator stage (default 'haiku')
 // }
 //
 // PREFER `content`: the FULL text of the task file, read by the conductor and inlined here.
@@ -50,6 +52,8 @@ if (!WORKING_BRANCH || !TASKS.length) {
   return []
 }
 const BASE_REF = A.baseRef || WORKING_BRANCH
+const VALIDATOR_TYPE = A.validatorType || 'task-validator'
+const VALIDATOR_MODEL = A.validatorModel || 'haiku'
 
 // Conductor-created worktrees live at <repo>/.claude/worktrees/<slug>; refuse anything else so the
 // destination rule is enforced rather than remembered (sibling dirs polluted parent folders before).
@@ -231,7 +235,7 @@ ${contract ? `${contract}\n\n` : ''}${task.content
 Verify every acceptance criterion, check file scope against the ${contract ? 'write scope above' : "task's declared write-files"}, and scan for obvious errors. Do NOT run builds or tests.
 
 Note: the implementor was instructed NOT to append a Completion Summary to the task file — the conductor does that. Its absence is expected and is NOT a finding.`,
-      { agentType: 'task-validator', model: 'haiku', label: `validate:${task.slug}`, phase: 'Validate', schema: VALIDATION_SCHEMA }
+      { agentType: VALIDATOR_TYPE, model: VALIDATOR_MODEL, label: `validate:${task.slug}`, phase: 'Validate', schema: VALIDATION_SCHEMA }
     ).then(validation => ({ task, impl, validation }))
   }
 )
