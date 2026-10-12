@@ -222,6 +222,74 @@
         {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
         {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
       ]
+    },
+    {
+      "id": "producer",
+      "title": "Producer",
+      "description": "Produces one approved creative task inside its declared write scope and isolated worktree, conforming to the project bible.",
+      "source": "agents/producer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "task_write_files", "write_paths": ["$task.write_files"], "deny_paths": [], "requires_isolation": true},
+      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "git.commit", "shell.run", "zabin.worker"],
+      "input_schema": {"type": "object", "required": ["project_id", "task_id", "worktree", "write_files"], "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}, "worktree": {"type": "string"}, "write_files": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed", "verification"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}, "verification": {"type": "array"}, "containment": {"type": "string"}}, "additionalProperties": false},
+      "timeout_seconds": 7200,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 3, "partial_result": "discard"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model", "isolation"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "artifact_validator",
+      "title": "Artifact Validator",
+      "description": "Checks one completed creative task against its acceptance criteria, write scope, and the project bible.",
+      "source": "agents/artifact_validator.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["objective", "diff_range", "acceptance_criteria"], "properties": {"objective": {"type": "string"}, "diff_range": {"type": "string"}, "acceptance_criteria": {"type": "array"}, "bible_paths": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["verdict", "summary", "criteria"], "properties": {"verdict": {"type": "string"}, "summary": {"type": "string"}, "criteria": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 900,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "project_researcher",
+      "title": "Project Researcher",
+      "description": "Answers focused questions about a creative project's bible, outline, drafts, research notes, and sources from the project's own files and history.",
+      "source": "agents/project_researcher.md",
+      "model_tier": "fast",
+      "mutation_scope": {"mode": "read_only", "write_paths": [], "deny_paths": ["**/*"], "requires_isolation": false},
+      "required_tools": ["filesystem.read", "filesystem.search", "git.inspect"],
+      "input_schema": {"type": "object", "required": ["question"], "properties": {"question": {"type": "string"}, "scope": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["summary", "evidence"], "properties": {"summary": {"type": "string"}, "found": {"type": "boolean"}, "evidence": {"type": "array"}, "claims": {"type": "array"}, "caveats": {"type": "array"}}, "additionalProperties": false},
+      "timeout_seconds": 1200,
+      "failure_policy": {"on_timeout": "return_partial", "on_tool_error": "return_partial", "max_retries": 1, "partial_result": "return_with_warning"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
+    },
+    {
+      "id": "bible_keeper",
+      "title": "Bible Keeper",
+      "description": "Maintains the creative project's bible from merged artifacts and approved decisions, inside its declared write scope and isolated worktree.",
+      "source": "agents/bible_keeper.md",
+      "model_tier": "balanced",
+      "mutation_scope": {"mode": "task_write_files", "write_paths": ["$task.write_files"], "deny_paths": [], "requires_isolation": true},
+      "required_tools": ["filesystem.read", "filesystem.search", "filesystem.write", "git.inspect", "git.commit", "shell.run", "zabin.worker"],
+      "input_schema": {"type": "object", "required": ["project_id", "task_id", "worktree", "write_files"], "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}, "worktree": {"type": "string"}, "write_files": {"type": "array"}}, "additionalProperties": false},
+      "output_schema": {"type": "object", "required": ["status", "summary", "files_changed", "verification"], "properties": {"status": {"type": "string"}, "summary": {"type": "string"}, "files_changed": {"type": "array"}, "verification": {"type": "array"}, "containment": {"type": "string"}}, "additionalProperties": false},
+      "timeout_seconds": 7200,
+      "failure_policy": {"on_timeout": "fail_closed", "on_tool_error": "retry", "max_retries": 3, "partial_result": "discard"},
+      "adapter_requirements": [
+        {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model", "isolation"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
+        {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
+      ]
     }
   ]
 }
