@@ -8,8 +8,11 @@ export const meta = {
   ],
 }
 
-// args: { issues: [{ label, text }], agentType?: string }  — paste the full finding text per Critical/Major item.
+// args: { issues: [{ label, text, agentType? }], agentType?: string }  — paste the full finding text per Critical/Major item.
 //   agentType — agent used by both the investigate and cross-check stages (default 'codebase-researcher').
+//   issues[].agentType — per-issue override of the top-level agentType, for BOTH stages of that issue.
+//   Underscores are normalised to hyphens. A non-string/empty agentType (top-level or per issue) is
+//   refused with a log line and the empty result { taskable: [], contested: [], notReproduced: [] }.
 // Tolerate args passed as a JSON-encoded string (a common dispatch mistake) as well as a real object.
 const A = (() => { try { return typeof args === 'string' ? JSON.parse(args) : (args || {}) } catch { return {} } })()
 const ISSUES = A.issues || []
@@ -18,6 +21,13 @@ if (!ISSUES.length) {
   log('No issues provided in args.issues — nothing to investigate.')
   return { taskable: [], contested: [], notReproduced: [] }
 }
+const okType = v => v === undefined || v === null || (typeof v === 'string' && v.trim() !== '')
+if (!okType(A.agentType) || ISSUES.some(i => i && !okType(i.agentType))) {
+  log('REFUSED: agentType (top-level and issues[].agentType) must be a non-empty string.')
+  return { taskable: [], contested: [], notReproduced: [] }
+}
+const normalise = t => t.replace(/_/g, '-')
+const agentFor = i => normalise((i && i.agentType) || AGENT_TYPE)
 
 const DIAGNOSIS_SCHEMA = {
   type: 'object',
@@ -46,12 +56,12 @@ const diagnoses = await pipeline(
   ISSUES,
   i => agent(
     `Investigate this code-review finding and locate its root cause:\n\n${i.text}\n\nVerify the issue actually exists in the code before diagnosing. If it does not reproduce, set confirmed=false and explain.`,
-    { agentType: AGENT_TYPE, model: 'sonnet', label: `investigate:${i.label}`, phase: 'Investigate', schema: DIAGNOSIS_SCHEMA }
+    { agentType: agentFor(i), model: 'sonnet', label: `investigate:${i.label}`, phase: 'Investigate', schema: DIAGNOSIS_SCHEMA }
   ),
   (d, i) => !d || !d.confirmed ? { item: i, diagnosis: d, upheld: false } :
     agent(
       `A diagnosis claims the root cause of "${i.label}" is: ${d.rootCause} with fix: ${d.fixApproach}. Try to REFUTE it — is the root cause correct, and would the fix be complete without regressions? Default refuted=true if unconvinced.`,
-      { agentType: AGENT_TYPE, model: 'sonnet', label: `crosscheck:${i.label}`, phase: 'Cross-check', schema: VERDICT_SCHEMA }
+      { agentType: agentFor(i), model: 'sonnet', label: `crosscheck:${i.label}`, phase: 'Cross-check', schema: VERDICT_SCHEMA }
     ).then(v => ({ item: i, diagnosis: d, upheld: !!v && !v.refuted, dissent: v?.correction }))
 )
 

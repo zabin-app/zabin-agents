@@ -12,10 +12,16 @@ export const meta = {
 //   workingBranch: string,          // branch the conductor is on; worktrees sync to it
 //   baseRef?: string,               // ref pre-created worktrees were cut from / validators diff against (default: workingBranch)
 //   tasks: [{ slug, complexity, agentType, content?, path?, worktreePath?,
-//             objective?, acceptanceCriteria?, writeFiles? }],
-//   validatorType?: string,         // agentType of the validator stage (default 'task-validator')
-//   validatorModel?: string,        // model of the validator stage (default 'haiku')
+//             objective?, acceptanceCriteria?, writeFiles?, biblePaths? }],
+//   validatorType?: string,         // agentType of the validator stage (default 'task-validator'); non-empty string, underscores normalised to hyphens
+//   validatorModel?: string,        // model of the validator stage: 'haiku'|'sonnet'|'opus' (default 'haiku')
 // }
+//
+// `tasks[].biblePaths` (string[] of non-empty paths, optional): the project-bible/doc paths the
+// validator must check the changed lines against (its step 8, read-only). Only when non-empty, the
+// validator prompt gains a BIBLE PATHS block plus the worker's reported `docUpdatesNeeded`; absent
+// or empty leaves the validator prompt byte-identical. A bad validatorType/validatorModel/biblePaths
+// value logs a REFUSED line and returns [] before any dispatch.
 //
 // PREFER `content`: the FULL text of the task file, read by the conductor and inlined here.
 // When `content` is present the implementor never sees a filesystem path outside its own
@@ -52,7 +58,22 @@ if (!WORKING_BRANCH || !TASKS.length) {
   return []
 }
 const BASE_REF = A.baseRef || WORKING_BRANCH
-const VALIDATOR_TYPE = A.validatorType || 'task-validator'
+const VALIDATOR_MODELS = ['haiku', 'sonnet', 'opus']
+const given = v => v !== undefined && v !== null
+if (given(A.validatorType) && !(typeof A.validatorType === 'string' && A.validatorType.trim())) {
+  log(`REFUSED: args.validatorType must be a non-empty string. Got: ${JSON.stringify(A.validatorType)}`)
+  return []
+}
+if (given(A.validatorModel) && !VALIDATOR_MODELS.includes(A.validatorModel)) {
+  log(`REFUSED: args.validatorModel must be one of ${VALIDATOR_MODELS.join('|')}. Got: ${JSON.stringify(A.validatorModel)}`)
+  return []
+}
+const badBible = TASKS.filter(t => t && given(t.biblePaths) && !(Array.isArray(t.biblePaths) && t.biblePaths.every(p => typeof p === 'string' && p.trim())))
+if (badBible.length) {
+  log(`REFUSED: tasks[].biblePaths must be an array of non-empty strings. Offending: ${badBible.map(t => t.slug).join(', ')}`)
+  return []
+}
+const VALIDATOR_TYPE = (A.validatorType || 'task-validator').replace(/_/g, '-')
 const VALIDATOR_MODEL = A.validatorModel || 'haiku'
 
 // Conductor-created worktrees live at <repo>/.claude/worktrees/<slug>; refuse anything else so the
@@ -220,6 +241,9 @@ ${task.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
 WRITE SCOPE (context.write_files — the ONLY paths the diff may touch):
 ${task.writeFiles.map(f => `- ${f}`).join('\n')}`
       : null
+    const bible = (Array.isArray(task.biblePaths) && task.biblePaths.length)
+      ? `BIBLE PATHS (bible_paths — check the changed lines for conformance per your step 8; read-only):\n${task.biblePaths.map(p => `- ${p}`).join('\n')}\n\nPRODUCER-REPORTED BIBLE UPDATES NEEDED (the worker's docUpdatesNeeded; a new fact listed here is not a concern):\n${impl.docUpdatesNeeded || 'none'}\n\n`
+      : ''
     return agent(
       `Validate the implementation of task \`${task.slug}\`.
 
@@ -228,7 +252,7 @@ ${diffWhere}
 
 You are READ-ONLY. Run only read-only git commands. Never run git clean/checkout/reset/stash/rm, and never modify, create, or delete any file — other checkouts of this repo exist on this machine and hold uncommitted user work.
 
-${contract ? `${contract}\n\n` : ''}${task.content
+${contract ? `${contract}\n\n` : ''}${bible}${task.content
   ? `${contract ? 'Dispatch identity context (supplementary — the criteria above are authoritative):\n' : ''}<task>\n${task.content}\n</task>`
   : `Task file: ${task.path} (read-only)`}
 

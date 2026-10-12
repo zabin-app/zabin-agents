@@ -12,9 +12,16 @@ export const meta = {
 //         docs?: string[], repoRoot?: string, dimensions?: [{ key, agentType, model }] }
 //   dimensions — optional override for non-software artifacts. When supplied and non-empty it REPLACES
 //   the built-in code dimensions (no bug-fix dimension is added); each entry needs key + agentType
-//   (model: 'haiku'|'sonnet'|'opus'), else the run fails fast with an empty result. Each finding's
-//   refuter panel then runs the SAME agentType as the dimension that raised it, and review/refuter
-//   prompts use domain-neutral wording ('change'/'artifact'). Omitted: behaviour is unchanged.
+//   (model: 'haiku'|'sonnet'|'opus'); agentType underscores are normalised to hyphens. If `dimensions`
+//   is PRESENT but is not a non-empty array of valid entries (wrong type, [], malformed entry,
+//   duplicate key, bad model) the run is REFUSED: it logs and returns the exact shape
+//   { verdict: null, diffRange, reReview, confirmed: [], minors: [], perDimension: [], refused: '<reason>' }.
+//   Refuters always run as the neutral default agent (no agentType), as in the built-in path.
+//   review/refuter prompts use domain-neutral wording ('change'/'artifact').
+//   Custom mode also returns `customDimensions: true`, `dimensionKeys: [...]` and
+//   `missingDimensions: [...]`: a dimension whose reviewer returned no usable review is MISSING, is
+//   not counted PASS (perDimension verdict 'MISSING'), and while any is missing the verdict cannot be
+//   APPROVED or APPROVED_WITH_CONCERNS (NEEDS_WORK instead). Omitted: behaviour and output shape are unchanged.
 //   repoRoot — absolute path of the repo the diff lives in, when it is NOT the session repo
 //   (e.g. an app repo nested inside the checkout). Reviewers and refuters are told to run every
 //   git command as `git -C <repoRoot> ...`. Same cross-repo extension implement-wave.js carries.
@@ -29,7 +36,8 @@ const CHANGE_TYPE = A.changeType || 'feature'
 const PREV = A.previousReview
 const DOCS = Array.isArray(A.docs) ? A.docs.filter(Boolean) : []
 const REPO_ROOT = A.repoRoot
-const CUSTOM_DIMS = Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : null
+const DIMS_PRESENT = A.dimensions !== undefined && A.dimensions !== null
+const CUSTOM_DIMS = DIMS_PRESENT && Array.isArray(A.dimensions) && A.dimensions.length ? A.dimensions : null
 const GIT_CLAUSE = REPO_ROOT
   ? `The diff lives in the repo at ${REPO_ROOT} (NOT the session repo) — run EVERY git command as \`git -C ${REPO_ROOT} ...\` and read source files under that root. `
   : ''
@@ -53,11 +61,18 @@ if (CHANGE_TYPE === 'bug') BUILTIN_DIMENSIONS.unshift({ key: 'bugfix', agentType
 
 // Caller-supplied dimensions (non-software roles) replace the built-in list wholesale.
 const MODELS = ['haiku', 'sonnet', 'opus']
-if (CUSTOM_DIMS && !CUSTOM_DIMS.every(d => d && typeof d.key === 'string' && d.key && typeof d.agentType === 'string' && d.agentType && (d.model === undefined || MODELS.includes(d.model)))) {
-  log(`review-diff REFUSED: every args.dimensions entry needs a non-empty key and agentType (model, if given, one of ${MODELS.join('|')}). Got: ${JSON.stringify(A.dimensions)}`)
-  return { verdict: null, diffRange: DIFF, reReview: !!PREV, confirmed: [], minors: [], perDimension: [] }
+if (DIMS_PRESENT) {
+  const refuse = (reason) => {
+    log(`review-diff REFUSED: ${reason} Got: ${JSON.stringify(A.dimensions)}`)
+    return { verdict: null, diffRange: DIFF, reReview: !!PREV, confirmed: [], minors: [], perDimension: [], refused: reason }
+  }
+  if (!CUSTOM_DIMS) return refuse('args.dimensions, when supplied, must be a non-empty array.')
+  if (!CUSTOM_DIMS.every(d => d && typeof d.key === 'string' && d.key && typeof d.agentType === 'string' && d.agentType.trim() && (d.model === undefined || MODELS.includes(d.model)))) {
+    return refuse(`every args.dimensions entry needs a non-empty key and agentType (model, if given, one of ${MODELS.join('|')}).`)
+  }
+  if (new Set(CUSTOM_DIMS.map(d => d.key)).size !== CUSTOM_DIMS.length) return refuse('args.dimensions keys must be unique.')
 }
-const DIMENSIONS = CUSTOM_DIMS ? CUSTOM_DIMS.map(d => ({ key: d.key, agentType: d.agentType, model: d.model || 'sonnet' })) : BUILTIN_DIMENSIONS
+const DIMENSIONS = CUSTOM_DIMS ? CUSTOM_DIMS.map(d => ({ key: d.key, agentType: d.agentType.replace(/_/g, '-'), model: d.model || 'sonnet' })) : BUILTIN_DIMENSIONS
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -114,7 +129,7 @@ const reviewed = await pipeline(
       parallel([0, 1, 2].map(n => () =>
         agent(
           `A ${d.key} reviewer flagged this ${f.severity} finding on diff \`${DIFF}\`:\n${GIT_CLAUSE ? '\n' + GIT_CLAUSE + '\n' : ''}\nTitle: ${f.title}\nFile: ${f.file || '?'}:${f.line || '?'}\nProblem: ${f.problem}\n\nTry to REFUTE it: is this actually a real problem introduced by THIS diff? Default refuted=true if it is a false positive, pre-existing, or a misread.`,
-          { ...(CUSTOM_DIMS ? { agentType: d.agentType } : {}), model: 'haiku', label: `verify:${d.key}#${n}`, phase: 'Verify', schema: REFUTE_SCHEMA }
+          { model: 'haiku', label: `verify:${d.key}#${n}`, phase: 'Verify', schema: REFUTE_SCHEMA }
         )
       )).then(votes => {
         // Dead voters (null) abstain — an infra failure is not a refutation. A finding is
@@ -141,9 +156,12 @@ const major = confirmed.filter(f => f.severity === 'Major')
 const anyConcern = rows.some(r => r.raw && r.raw.verdict !== 'PASS') || minors.length > 0
 
 // Synthesis honors the severity floor: NEEDS_WORK/REJECTED require a confirmed Critical/Major.
+const usable = r => !!r.raw && typeof r.raw.verdict === 'string' && Array.isArray(r.raw.findings)
+const missing = CUSTOM_DIMS ? DIMENSIONS.map(d => d.key).filter(k => !rows.some(r => r.dimension === k && usable(r))) : []
 let verdict
 if (crit.length) verdict = 'REJECTED'
 else if (major.length) verdict = 'NEEDS_WORK'
+else if (missing.length) verdict = 'NEEDS_WORK'
 else if (anyConcern) verdict = 'APPROVED_WITH_CONCERNS'
 else verdict = 'APPROVED'
 
@@ -154,5 +172,9 @@ return {
   reReview: !!PREV,
   confirmed,
   minors,
-  perDimension: rows.map(r => ({ dimension: r.dimension, verdict: r.raw?.verdict || 'PASS', confirmedCount: r.confirmed.length, minorCount: r.minors.length })),
+  perDimension: [
+    ...rows.map(r => ({ dimension: r.dimension, verdict: r.raw?.verdict || (CUSTOM_DIMS ? 'MISSING' : 'PASS'), confirmedCount: r.confirmed.length, minorCount: r.minors.length })),
+    ...missing.filter(k => !rows.some(r => r.dimension === k)).map(k => ({ dimension: k, verdict: 'MISSING', confirmedCount: 0, minorCount: 0 })),
+  ],
+  ...(CUSTOM_DIMS ? { customDimensions: true, dimensionKeys: DIMENSIONS.map(d => d.key), missingDimensions: missing } : {}),
 }
