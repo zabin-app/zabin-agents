@@ -12,6 +12,7 @@ Zabin owns durable workflow state. Filesystem checkpoints retain only the recove
 | --- | --- |
 | Portable roles (`agents/`, `config/agents.json`) | Define role behavior, closed input/output contracts, semantic capabilities, mutation scope, timeouts, and failure policy. |
 | Workflow skills (`skills/`) | Compose roles and semantic host capabilities into research, planning, implementation, review, documentation, and recovery programs. |
+| Pack registry (`config/packs.json`, `schemas/pack.schema.json`) | Groups roles, skills, and workflow programs into installable packs with a scope: `global` packs form the default selection, `project` packs install only into a project destination. |
 | Capability policy (`config/model-tiers.json`) | Selects provider-neutral `fast`, `balanced`, and `deep` capability classes; the host resolves each class to a runtime model. |
 | MCP policy (`config/zabin-mcp.json`) | Defines the two Zabin surfaces, canonical tool inventory, identities, transport, credentials, risk classes, and approval requirements. |
 | Contract schemas (`schemas/`) | Close and version the role registry, capability tiers, MCP policy, and recovery checkpoint formats. |
@@ -71,6 +72,17 @@ Zabin records the authoritative project, plan, phase, wave, task, gate, verdict,
 | Native clients | Supported clients must prove configuration source, trust/approval, activation, exact enumeration, allowed dispatch, forbidden non-receipt, missing-secret containment, and cleanup through external observation. Goose observations additionally run under an explicit disposable `GOOSE_PATH_ROOT`; that state isolation is neither workspace/recipe trust nor a process sandbox. |
 | Recovery storage | Checkpoints contain redacted evidence, use restrictive permissions and atomic replacement, and remain non-authoritative. |
 | Third-party adapters | Unsupported clients are not enabled on partial evidence. Goose and PI remain outside the supported boundary. |
+
+## Packs and Scope
+
+`config/packs.json` (schema_version 1, validated against `schemas/pack.schema.json`) is the install-selection layer of the bundle. It names each pack's roles (ids from `config/agents.json`), skills (directories under `skills/`), and workflow programs (files under `adapters/claude/workflows/`). The validator requires that every role, skill, and program belongs to at least one pack. Packs only select what installs; they never redefine role, MCP, or approval policy.
+
+Scope is a destination rule:
+
+- `global` packs are part of the default selection and may install into the operator's home directory. The `software` pack is global.
+- `project` packs are never selected by default and may install only into an explicit project destination. The `studio` pack is project-scoped, so `zabctl agents install` refuses it for the home directory.
+
+`studio` is an overlay, not a separate conductor. Its skill (`skills/studio`) runs the `conductor` skill, which both packs ship, and substitutes creative roles, program arguments, gates, and domain knowledge for the software ones. Every conductor state, invariant, human gate, and lease rule stays in force. A creative project therefore installs the `studio` pack into itself, and the conductor skill it receives is the same one the software pack installs.
 
 ## Data Flow
 

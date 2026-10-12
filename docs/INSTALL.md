@@ -153,6 +153,46 @@ still reports them clean), and the shared families — role instructions under
 `<destination>/agents`, portable skills under `<destination>/.agents/skills`,
 and the ownership manifest — install regardless of the selection.
 
+### Selecting packs
+
+`--pack <id>` selects agent packs by id. It is repeatable and
+comma-separated. The bundle's packs are declared in `config/packs.json`:
+`software` (global) and `studio` (project-scoped). Without `--pack`, the
+selection resolves in this order:
+
+1. `--pack` on the command line.
+2. The destination's `.zabin/project.toml` `agent_packs`, when `--destination`
+   names a project.
+3. The bundle's global packs (`software`).
+
+The `packs:` line of a dry run states which rule applied. Verified against the
+pinned build:
+
+```text
+packs: software (default)                       # no --pack, no project marker
+packs: studio (from <project>/.zabin/project.toml)
+packs: software (from --pack)                   # --pack wins over the marker
+```
+
+Set the project marker with `zabctl project init --project-id <id>
+--agent-packs studio`, which writes `agent_packs = "studio"` into
+`.zabin/project.toml`. Project-scoped packs install per project only. A
+project-scoped pack without `--destination` is refused with a usage error
+(exit 2), and so is a destination of the home directory. Always name the
+project with `--destination <project>`:
+
+```sh
+zabctl agents install --claude --pack studio \
+  --destination /absolute/path/to/creative-project
+```
+
+Narrowing is refused. An install whose selection drops a pack already
+installed (for example, `--pack software` after `software,studio`) is refused
+unless `--prune` is passed. `--prune` removes the assets of previously
+installed packs that the new selection omits. The `--help` text documents
+both rules; a dry run does not exercise them, because dry runs install
+nothing.
+
 ### Isolated, relocatable destinations
 
 Everything an install writes — adapters, shared families, and the ownership

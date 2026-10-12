@@ -129,6 +129,28 @@ links a locally trusted development destination at the source instead of
 copying. File installation does not grant workspace trust, approve MCP
 servers, or activate them; those remain separate client-controlled states.
 
+## Packs
+
+A pack is a named group of roles, skills, and Claude Code workflow programs
+that `zabctl agents install` selects as one unit. `config/packs.json` declares
+the packs against `schemas/pack.schema.json`. Every role in
+`config/agents.json`, every directory under `skills/`, and every program under
+`adapters/claude/workflows/` must belong to at least one pack, or validation
+fails.
+
+A pack's scope decides where it may be installed:
+
+- `global` packs form the default selection and may be installed into the
+  home directory. The `software` pack is global.
+- `project` packs are never selected by default and may only be installed
+  into a project destination. The `studio` pack is project-scoped.
+
+A project selects packs in its `.zabin/project.toml` with
+`agent_packs = "studio"` (written by `zabctl project init --agent-packs studio`),
+and `--pack` on the command line overrides that setting. See
+[docs/INSTALL.md](docs/INSTALL.md#selecting-packs) for the precedence and the
+`--prune` rule.
+
 ## Goose audit workflow
 
 Use only disposable, explicit destinations when inspecting the Goose 1.45.0

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "packs": [
+    {
+      "id": "software",
+      "description": "The software-delivery roles, skills and workflow programs: planning, implementation, review, verification and documentation for code repositories.",
+      "scope": "global",
+      "roles": [
+        "architecture_enforcer",
+        "bug_fix_reviewer",
+        "code_quality_inspector",
+        "codebase_researcher",
+        "doc_maintainer",
+        "external_researcher",
+        "git_historian",
+        "implementor",
+        "integration_verifier",
+        "logic_reasoning_checker",
+        "risks_tradeoffs_analyzer",
+        "security_reviewer",
+        "task_validator"
+      ],
+      "skills": ["conductor", "docs-sync", "doc-validate"],
+      "workflows": [
+        "research-sweep",
+        "plan-verify",
+        "implement-wave",
+        "review-diff",
+        "followup-investigate",
+        "docs-explore"
+      ]
+    },
+    {
+      "id": "studio",
+      "description": "The creative-production roles and studio overlay for long-form media projects such as books, video and film, installed only into a project destination.",
+      "scope": "project",
+      "roles": [
+        "external_researcher",
+        "producer",
+        "artifact_validator",
+        "project_researcher",
+        "bible_keeper",
+        "structure_reviewer",
+        "craft_reviewer",
+        "continuity_checker",
+        "fact_rights_reviewer",
+        "audience_reviewer"
+      ],
+      "skills": ["conductor", "studio"],
+      "workflows": [
+        "research-sweep",
+        "plan-verify",
+        "implement-wave",
+        "review-diff",
+        "followup-investigate"
+      ]
+    }
+  ]
+}
