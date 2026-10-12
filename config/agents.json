@@ -290,6 +290,463 @@
         {"client": "claude_code", "artifact": "markdown_frontmatter", "required_fields": ["name", "description", "tools", "model", "isolation"], "role_name_transform": "snake_to_kebab", "tool_mapping": "capability_to_allowlist"},
         {"client": "codex", "artifact": "toml", "required_fields": ["name", "description", "developer_instructions", "sandbox_mode"], "role_name_transform": "identity", "tool_mapping": "capability_to_native"}
       ]
+    },
+    {
+      "id": "structure_reviewer",
+      "title": "Structure Reviewer",
+      "description": "Reviews a creative change range for coherence and architecture: arc and argument flow, pacing, segment purpose, setups and payoffs, balance, and outline fidelity.",
+      "source": "agents/structure_reviewer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {
+        "mode": "read_only",
+        "write_paths": [],
+        "deny_paths": [
+          "**/*"
+        ],
+        "requires_isolation": false
+      },
+      "required_tools": [
+        "filesystem.read",
+        "filesystem.search",
+        "git.inspect"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "diff_range"
+        ],
+        "properties": {
+          "diff_range": {
+            "type": "string"
+          },
+          "bible_paths": {
+            "type": "array"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "verdict",
+          "findings"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeout_seconds": 1800,
+      "failure_policy": {
+        "on_timeout": "return_partial",
+        "on_tool_error": "return_partial",
+        "max_retries": 1,
+        "partial_result": "return_with_warning"
+      },
+      "adapter_requirements": [
+        {
+          "client": "claude_code",
+          "artifact": "markdown_frontmatter",
+          "required_fields": [
+            "name",
+            "description",
+            "tools",
+            "model"
+          ],
+          "role_name_transform": "snake_to_kebab",
+          "tool_mapping": "capability_to_allowlist"
+        },
+        {
+          "client": "codex",
+          "artifact": "toml",
+          "required_fields": [
+            "name",
+            "description",
+            "developer_instructions",
+            "sandbox_mode"
+          ],
+          "role_name_transform": "identity",
+          "tool_mapping": "capability_to_native"
+        }
+      ]
+    },
+    {
+      "id": "craft_reviewer",
+      "title": "Craft Reviewer",
+      "description": "Reviews a creative change range for voice and line-level craft against the style guide: POV and tense, dialogue, clarity, redundancy, cliche, register, and script format conventions.",
+      "source": "agents/craft_reviewer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {
+        "mode": "read_only",
+        "write_paths": [],
+        "deny_paths": [
+          "**/*"
+        ],
+        "requires_isolation": false
+      },
+      "required_tools": [
+        "filesystem.read",
+        "filesystem.search",
+        "git.inspect"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "diff_range"
+        ],
+        "properties": {
+          "diff_range": {
+            "type": "string"
+          },
+          "bible_paths": {
+            "type": "array"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "verdict",
+          "findings"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeout_seconds": 1800,
+      "failure_policy": {
+        "on_timeout": "return_partial",
+        "on_tool_error": "return_partial",
+        "max_retries": 1,
+        "partial_result": "return_with_warning"
+      },
+      "adapter_requirements": [
+        {
+          "client": "claude_code",
+          "artifact": "markdown_frontmatter",
+          "required_fields": [
+            "name",
+            "description",
+            "tools",
+            "model"
+          ],
+          "role_name_transform": "snake_to_kebab",
+          "tool_mapping": "capability_to_allowlist"
+        },
+        {
+          "client": "codex",
+          "artifact": "toml",
+          "required_fields": [
+            "name",
+            "description",
+            "developer_instructions",
+            "sandbox_mode"
+          ],
+          "role_name_transform": "identity",
+          "tool_mapping": "capability_to_native"
+        }
+      ]
+    },
+    {
+      "id": "continuity_checker",
+      "title": "Continuity Checker",
+      "description": "Checks a creative change range for consistency against the bible and prior merged artifacts: names, ages, timeline, geography, objects, established facts, and terminology.",
+      "source": "agents/continuity_checker.md",
+      "model_tier": "balanced",
+      "mutation_scope": {
+        "mode": "read_only",
+        "write_paths": [],
+        "deny_paths": [
+          "**/*"
+        ],
+        "requires_isolation": false
+      },
+      "required_tools": [
+        "filesystem.read",
+        "filesystem.search",
+        "git.inspect"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "diff_range"
+        ],
+        "properties": {
+          "diff_range": {
+            "type": "string"
+          },
+          "bible_paths": {
+            "type": "array"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "verdict",
+          "findings"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeout_seconds": 1800,
+      "failure_policy": {
+        "on_timeout": "return_partial",
+        "on_tool_error": "return_partial",
+        "max_retries": 1,
+        "partial_result": "return_with_warning"
+      },
+      "adapter_requirements": [
+        {
+          "client": "claude_code",
+          "artifact": "markdown_frontmatter",
+          "required_fields": [
+            "name",
+            "description",
+            "tools",
+            "model"
+          ],
+          "role_name_transform": "snake_to_kebab",
+          "tool_mapping": "capability_to_allowlist"
+        },
+        {
+          "client": "codex",
+          "artifact": "toml",
+          "required_fields": [
+            "name",
+            "description",
+            "developer_instructions",
+            "sandbox_mode"
+          ],
+          "role_name_transform": "identity",
+          "tool_mapping": "capability_to_native"
+        }
+      ]
+    },
+    {
+      "id": "fact_rights_reviewer",
+      "title": "Fact and Rights Reviewer",
+      "description": "Reviews a creative change range for factual accuracy and sourcing of claims, and for rights and sensitivity hazards such as clearance, defamation, trademark, and sensitive content.",
+      "source": "agents/fact_rights_reviewer.md",
+      "model_tier": "deep",
+      "mutation_scope": {
+        "mode": "read_only",
+        "write_paths": [],
+        "deny_paths": [
+          "**/*"
+        ],
+        "requires_isolation": false
+      },
+      "required_tools": [
+        "filesystem.read",
+        "filesystem.search",
+        "git.inspect",
+        "web.search",
+        "web.fetch"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "diff_range"
+        ],
+        "properties": {
+          "diff_range": {
+            "type": "string"
+          },
+          "bible_paths": {
+            "type": "array"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "verdict",
+          "findings"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeout_seconds": 1800,
+      "failure_policy": {
+        "on_timeout": "return_partial",
+        "on_tool_error": "return_partial",
+        "max_retries": 1,
+        "partial_result": "return_with_warning"
+      },
+      "adapter_requirements": [
+        {
+          "client": "claude_code",
+          "artifact": "markdown_frontmatter",
+          "required_fields": [
+            "name",
+            "description",
+            "tools",
+            "model"
+          ],
+          "role_name_transform": "snake_to_kebab",
+          "tool_mapping": "capability_to_allowlist"
+        },
+        {
+          "client": "codex",
+          "artifact": "toml",
+          "required_fields": [
+            "name",
+            "description",
+            "developer_instructions",
+            "sandbox_mode"
+          ],
+          "role_name_transform": "identity",
+          "tool_mapping": "capability_to_native"
+        }
+      ]
+    },
+    {
+      "id": "audience_reviewer",
+      "title": "Audience Reviewer",
+      "description": "Reviews a creative change range for fitness for the declared audience and platform: genre expectations, hook strength, reading level, call to action, packaging alignment, and length targets.",
+      "source": "agents/audience_reviewer.md",
+      "model_tier": "balanced",
+      "mutation_scope": {
+        "mode": "read_only",
+        "write_paths": [],
+        "deny_paths": [
+          "**/*"
+        ],
+        "requires_isolation": false
+      },
+      "required_tools": [
+        "filesystem.read",
+        "filesystem.search",
+        "git.inspect"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "diff_range"
+        ],
+        "properties": {
+          "diff_range": {
+            "type": "string"
+          },
+          "bible_paths": {
+            "type": "array"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "dimension",
+          "verdict",
+          "findings"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeout_seconds": 1800,
+      "failure_policy": {
+        "on_timeout": "return_partial",
+        "on_tool_error": "return_partial",
+        "max_retries": 1,
+        "partial_result": "return_with_warning"
+      },
+      "adapter_requirements": [
+        {
+          "client": "claude_code",
+          "artifact": "markdown_frontmatter",
+          "required_fields": [
+            "name",
+            "description",
+            "tools",
+            "model"
+          ],
+          "role_name_transform": "snake_to_kebab",
+          "tool_mapping": "capability_to_allowlist"
+        },
+        {
+          "client": "codex",
+          "artifact": "toml",
+          "required_fields": [
+            "name",
+            "description",
+            "developer_instructions",
+            "sandbox_mode"
+          ],
+          "role_name_transform": "identity",
+          "tool_mapping": "capability_to_native"
+        }
+      ]
     }
   ]
 }
