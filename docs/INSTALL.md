@@ -582,13 +582,15 @@ never overwrites something it does not already own in the manifest.
 
 | Client | Status | Rendered/installed artifacts | Verified against |
 | --- | --- | --- | --- |
-| Claude Code | Supported, fully rendered | `.mcp.json`; `.claude/settings.json`; `.claude/agents/<role>.md` × 13 (kebab-case names, pinned `model:` per capability tier, semantic tool allowlists); `.claude/workflows/*.js` × 6 | Rendered and diffed directly (below) |
+| Claude Code | Supported, fully rendered (counts below are for the default software pack; see [Selecting packs](#selecting-packs)) | `.mcp.json`; `.claude/settings.json`; `.claude/agents/<role>.md` × 13 (kebab-case names, pinned `model:` per capability tier, semantic tool allowlists); `.claude/workflows/*.js` × 6 | Rendered and diffed directly (below) |
 | Codex | Supported, fully rendered | `.codex/config.toml` (`mcp_servers."zabin"` / `"zabin-worker"`, per-tool `approval_mode`, bearer-env-var binding) | Rendered directly |
 | Goose 1.45.0 | Unsupported; fail-closed | `goose/recipe.json`, `goose/settings.json` — both inert (`active: false`, empty `artifacts`); no active artifact ever produced | Repo's own [`adapters/goose/COMPATIBILITY.md`](../adapters/goose/COMPATIBILITY.md) + [`client-lock.json`](../adapters/goose/client-lock.json), pinned to 1.45.0 |
 | Pi | Unsupported; fail-closed | None — there is no `pi` render target; only a conformance lock | [`adapters/pi/COMPATIBILITY.md`](../adapters/pi/COMPATIBILITY.md) + [`extension-lock.json`](../adapters/pi/extension-lock.json), pinned to PI 0.84.1 / `pi-mcp-adapter` 2.22.0 |
 | OpenCode | Supported, with documented limitations (opt-in target) | `opencode.json`; `.opencode/agents/<role>.md` × 13 (kebab-case names, `mode: subagent`, per-role per-server permission wildcard pair — e.g. `zabin-worker_*`/`zabin_*`: allow/deny — not a per-tool map); native `.agents/skills` consumption, no bridge or copy written; consumes project-root `AGENTS.md` if present (not itself an installed artifact) | [`adapters/opencode/COMPATIBILITY.md`](../adapters/opencode/COMPATIBILITY.md), pinned to `v1.18.25`, incl. a shipped acceptance probe against the real installer and a live daemon |
 
 ### The 13 rendered `.claude/agents` files
+
+This list, the 13-role counts above, and the 19-file total below describe the DEFAULT (software pack) selection. A studio selection renders a different role and program set; see [Selecting packs](#selecting-packs).
 
 ```text
 architecture-enforcer   code-quality-inspector   external-researcher   logic-reasoning-checker   security-reviewer
@@ -604,7 +606,7 @@ docs-explore.js  followup-investigate.js  implement-wave.js  plan-verify.js  res
 
 Verified by running `zabctl agents render --target claude_code` against this
 repository's bundle to a scratch output directory and listing the result;
-the same 19 files (13 agents + 6 workflows) plus `.claude/settings.json` and
+the same 19 files for the default selection (13 agents + 6 workflows) plus `.claude/settings.json` and
 `.mcp.json` appear whether they come from `render` alone or from `install`.
 
 ### Goose: native consumption, still fail-closed

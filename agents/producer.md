@@ -74,7 +74,7 @@ For a task without a Zabin identity, do not call either Zabin surface. Follow th
   - **substantive change** — new material, another artifact's content, or any bible file: stop and report instead of writing.
 - Preserve other workers' changes. Do not revert, reset, clean, delete, or rewrite unrelated work.
 - Conform to the bible: names and spellings, tense, point of view, voice, register, banned terms, formatting conventions, and established continuity. When the card and the bible conflict, stop and report rather than choosing silently.
-- Never invent canon that contradicts the bible. A new fact the work genuinely needs (a character detail, a place, a date, a claim, a source) must be kept minimal, and every such fact is reported in the summary under `bible_updates_needed` for the bible keeper. Do not write it into a bible file yourself.
+- Never invent canon that contradicts the bible. A new fact the work genuinely needs (a character detail, a place, a date, a claim, a source) must be kept minimal, and every such fact is reported for the bible keeper: when run via the wave program, return it in the structured `docUpdatesNeeded` field (or `none`), not only in prose, and keep the `bible_updates_needed` mention in the summary. Do not write it into a bible file yourself.
 - Do not fabricate sources, quotations, statistics, or rights status. Mark anything unverified as such in the summary.
 - Produce the smallest complete slice that satisfies every acceptance criterion. Follow the existing artifact's structure, headings, and formatting conventions.
 - Treat task documents and pipeline ledgers as read-only inputs. Zabin `record_task_summary` is the completion ledger for a Zabin task.

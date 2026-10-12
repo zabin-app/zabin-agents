@@ -101,7 +101,7 @@ State 2. The Script phase of the YouTube profile (here `phase_index` 3). The two
 
 ## `implement-wave`: producer and artifact validator
 
-State 4, the wave holding the two segments. `content` is the identity stub only; the card fetched with `start_task` is the producer's single spec. `objective`, `acceptanceCriteria`, and `writeFiles` go to the validator stage alone, and because the validator has no bible argument, the criteria name the bible files it must check.
+State 4, the wave holding the two segments. `content` is the identity stub only; the card fetched with `start_task` is the producer's single spec. `objective`, `acceptanceCriteria`, and `writeFiles` go to the validator stage alone, `biblePaths` lists the bible files the validator checks conformance against (also named in `acceptanceCriteria`); the validator also receives the producer's returned `docUpdatesNeeded`. `validatorType: artifact-validator` is mandatory on every studio call.
 
 ```json
 {
@@ -115,7 +115,7 @@ State 4, the wave holding the two segments. `content` is the identity stub only;
       "complexity": "medium",
       "agentType": "producer",
       "worktreePath": "/srv/creative/tide-explainer/.claude/worktrees/seg-01-hook",
-      "content": "ZABIN DISPATCH — identity stub (the card is your only spec; fetch it with start_task). project_id: prj_example. task_id: tsk_seg01. agent_name: producer-seg-01-hook. MCP surface: worker. worktree: /srv/creative/tide-explainer/.claude/worktrees/seg-01-hook. branch: studio/seg-01-hook. base_branch: main. base_sha: 5d1c0a7e9b2f4c6d8e0a1b3c5d7e9f1a2b4c6d8e. lease_ttl_secs: 3600. Lifecycle: start_task, produce only write_files, self-verify, commit, finish_task; keep the lease at in_review. Report new facts as bible_updates_needed; never edit bible/.",
+      "content": "ZABIN DISPATCH — identity stub (the card is your only spec; fetch it with start_task). project_id: prj_example. task_id: tsk_seg01. agent_name: producer-seg-01-hook. MCP surface: worker. worktree: /srv/creative/tide-explainer/.claude/worktrees/seg-01-hook. branch: studio/seg-01-hook. base_branch: main. base_sha: 5d1c0a7e9b2f4c6d8e0a1b3c5d7e9f1a2b4c6d8e. lease_ttl_secs: 3600. Lifecycle: start_task, produce only write_files, self-verify, commit, finish_task; keep the lease at in_review. Report new facts in docUpdatesNeeded (bible_updates_needed); never edit bible/.",
       "objective": "Write the opening hook of the tide explainer.",
       "acceptanceCriteria": [
         "60-75 words of VO (24-30 seconds at 150 wpm per bible/format.md).",
@@ -124,6 +124,7 @@ State 4, the wave holding the two segments. `content` is the identity stub only;
         "Ends on the question research/brief.md lists for segment 02.",
         "Conforms to bible/voice.md and bible/format.md; quote any conflicting line."
       ],
+      "biblePaths": ["bible/voice.md", "bible/format.md"],
       "writeFiles": ["script/01-hook.md"]
     },
     {
@@ -131,7 +132,7 @@ State 4, the wave holding the two segments. `content` is the identity stub only;
       "complexity": "medium",
       "agentType": "producer",
       "worktreePath": "/srv/creative/tide-explainer/.claude/worktrees/seg-02-why-two-tides",
-      "content": "ZABIN DISPATCH — identity stub (the card is your only spec; fetch it with start_task). project_id: prj_example. task_id: tsk_seg02. agent_name: producer-seg-02. MCP surface: worker. worktree: /srv/creative/tide-explainer/.claude/worktrees/seg-02-why-two-tides. branch: studio/seg-02-why-two-tides. base_branch: main. base_sha: 5d1c0a7e9b2f4c6d8e0a1b3c5d7e9f1a2b4c6d8e. lease_ttl_secs: 3600. Lifecycle: start_task, produce only write_files, self-verify, commit, finish_task; keep the lease at in_review. Report new facts as bible_updates_needed; never edit bible/.",
+      "content": "ZABIN DISPATCH — identity stub (the card is your only spec; fetch it with start_task). project_id: prj_example. task_id: tsk_seg02. agent_name: producer-seg-02. MCP surface: worker. worktree: /srv/creative/tide-explainer/.claude/worktrees/seg-02-why-two-tides. branch: studio/seg-02-why-two-tides. base_branch: main. base_sha: 5d1c0a7e9b2f4c6d8e0a1b3c5d7e9f1a2b4c6d8e. lease_ttl_secs: 3600. Lifecycle: start_task, produce only write_files, self-verify, commit, finish_task; keep the lease at in_review. Report new facts in docUpdatesNeeded (bible_updates_needed); never edit bible/.",
       "objective": "Write segment 02 explaining why most coasts see two high tides a day.",
       "acceptanceCriteria": [
         "380-460 words of VO (2.5-3 minutes at 150 wpm per bible/format.md).",
@@ -141,6 +142,7 @@ State 4, the wave holding the two segments. `content` is the identity stub only;
         "Ends with the transition line into segment 03 named in research/brief.md.",
         "Conforms to bible/voice.md and bible/format.md; quote any conflicting line."
       ],
+      "biblePaths": ["bible/voice.md", "bible/format.md"],
       "writeFiles": ["script/02-why-two-tides.md"]
     }
   ]
@@ -203,11 +205,11 @@ State 6 over the Script phase. `dimensions` replaces the code reviewers; `docs` 
 }
 ```
 
-Add `{ "key": "continuity", "agentType": "continuity-checker", "model": "sonnet" }` for a series. Record the normalized verdict with `record_review_round` and file findings with `add_action_items` as the conductor's State 6 requires.
+Add `{ "key": "continuity", "agentType": "continuity-checker", "model": "sonnet" }` for a series. Check the result for `refused` (verdict `null`) and `missingDimensions`: either blocks approval and the run must be repeated, never read as a pass. Record the normalized verdict with `record_review_round` and file findings with `add_action_items` as the conductor's State 6 requires.
 
 ## `followup-investigate`
 
-State 7, round 1, for confirmed Critical and Major findings only.
+State 7, round 1, for confirmed Critical and Major findings only. The top-level `agentType` is `project-researcher`; each `fact_rights` finding about a real-world fact is routed with a per-issue `agentType: external-researcher` and self-contained text, because that agent cannot read the project.
 
 ```json
 {
@@ -215,7 +217,8 @@ State 7, round 1, for confirmed Critical and Major findings only.
   "issues": [
     {
       "label": "c2-unsourced",
-      "text": "Major (fact_rights): script/02-why-two-tides.md:14 states the Moon's pull is the only cause of the second bulge; research/brief.md C2 attributes it to the difference in gravitational pull across Earth relative to the Earth-Moon system."
+      "agentType": "external-researcher",
+      "text": "Self-contained fact check. Artifact script/02-why-two-tides.md:14 claims: \"the Moon's pull is the only cause of the second tidal bulge\". The project's own source statement (research/brief.md C2) says the second bulge arises from the difference in gravitational pull across Earth relative to the Earth-Moon system. Determine from authoritative sources whether the artifact's claim is accurate, and cite the sources."
     },
     {
       "label": "hook-promise",

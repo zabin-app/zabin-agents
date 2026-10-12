@@ -69,24 +69,27 @@ No delta. The server overlap report, `update_task` amendment, and wave recording
 ### State 4 — Build and validate
 
 - Dispatch drafting cards with the wave-implementation program using `tasks[].agentType` `producer` (or `bible-keeper` for bible cards) and top-level `validatorType` `artifact-validator`; see the [implement-wave example](references/payloads.md#implement-wave-producer-and-artifact-validator). Model tiers follow the conductor's complexity mapping.
-- The validator receives no MCP access and no separate bible argument, so each card's `acceptanceCriteria` passed to the program must name the bible files to check against. A conformance violation is a `fail`; an unrecorded new fact is at least a `concern` unless the producer reported it under `bible_updates_needed`.
+- Every producer card's implement-wave task carries `biblePaths` (the bible files it must conform to, also named in its `acceptanceCriteria`). The validator then checks conformance; a violation is a `fail`, and an unrecorded new fact is at least a `concern` unless the producer listed it in its returned `docUpdatesNeeded` (its `bible_updates_needed`).
+- `validatorType: artifact-validator` is MANDATORY on every studio implement-wave call; never rely on the task-validator default. `validatorModel` defaults to haiku and may be raised (sonnet or opus) for long or bible-heavy artifacts, at higher cost.
 - Integration gates are **assembly checks**, not a build: assemble the full manuscript or script in outline order, measure total length against the budget, confirm every outline unit is present and no orphan exists, and run the profile's format lint where it defines one. Persist each as `wave-<n>-assembly-<check>` (for example `wave-2-assembly-length`) through `record_gate_results`, deriving `<n>` from existing gate names as the conductor requires. There is no build toolchain; never install one.
 - Assembled output is evidence, not an artifact: write it under the run's artifact root outside the repository, never into the checkout, and never commit it.
 
 ### State 5 — Documentation routing
 
-- Bible updates are `bible_keeper` cards on repository files under `bible/`, not managed documents and not `doc_maintainer` work. Collect `bible_updates_needed` from producer summaries (the Zabin task summary, or the program's completion summary) and from continuity and fact findings; each fact cites its merged source.
+- Bible updates are `bible_keeper` cards on repository files under `bible/`, not managed documents and not `doc_maintainer` work. Collect bible updates from each producer's returned `docUpdatesNeeded` (its `bible_updates_needed`; also in the Zabin task summary) and from continuity and fact findings; each fact cites its merged source.
 - Bible cards follow the conductor's documentation-task rules unchanged: exact `write_files`, sequential relative to the next wave, the same verdict and gate lifecycle (validated by `artifact_validator`).
 - Managed project documents, if a creative project has any, stay on the conductor's State 5 path unchanged.
 
 ### State 6 — Review
 
 - Run the diff-review program over `<PHASE_BASE>..HEAD` with `dimensions` set to the profile's default dimension set (plus any optional dimension the bible or the human enabled), `changeType` `feature`, and the bible files as `docs`. `dimensions` replaces the code dimensions entirely; no software reviewer runs. See the [review-diff example](references/payloads.md#review-diff-youtube-dimension-set).
+- A review-diff result with `refused` (verdict `null`) or a non-empty `missingDimensions` blocks approval: re-run it, never read it as a pass.
 - Adversarial verification, verdict normalization, round numbering, and action-item filing are unchanged.
 
 ### State 7 — Follow-up ratchet
 
-- Run follow-up investigation with `agentType` `project-researcher`; see the [followup-investigate example](references/payloads.md#followup-investigate).
+- Run follow-up investigation with top-level `agentType` `project-researcher` (MANDATORY). Route each `fact_rights` finding about a real-world fact per issue with `agentType: external-researcher`; its issue text must be self-contained (quote the artifact `path:line` and the claimed fact from the finding, plus the project's own source statement when one exists), because `external-researcher` cannot read the project. See the [followup-investigate example](references/payloads.md#followup-investigate).
+- Capability rule: a `notReproduced` result is authoritative only when the investigator could reach the evidence. If not (for example `project-researcher` on a world fact), re-dispatch that issue once with the capable `agentType`; if it still does not resolve, keep the action item open and escalate. Never resolve or drop it.
 - Fix cards are `producer` cards on the affected artifact paths (or `bible_keeper` cards when the finding is a bible error), each with `action_item_id`. The two-round cap and convergence-at-cap rules are unchanged.
 
 ### State 8 — Report
@@ -107,6 +110,10 @@ A one-time operator setup, done outside the pipeline run:
 5. Render the project MCP connections: `zabctl project render-mcp`.
 
 Never install the studio pack without `--destination <project>`: it is project-only, and zabctl refuses a studio install aimed at the home directory.
+
+## Host support
+
+Studio substitutions rely on the parameterized Claude Code programs. The portable runbooks under `skills/conductor/workflows` still name software roles, so studio is supported on Claude Code only for now.
 
 ## What stays software-shaped
 

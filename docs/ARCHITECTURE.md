@@ -46,6 +46,7 @@ supported host -> rendered adapter -> Zabin MCP surfaces
 
 - Prompts name registered semantic capabilities and role contracts, not host-specific dispatch APIs.
 - Adapter rendering depends on canonical policy, schemas, and any conditional client compatibility lock. Policy never depends on rendered client files, and a failed support gate can produce only inert output.
+- The pack registry references role ids, skill directories, and program files; installation and doctor consume it, and no policy layer depends on it. Pack completeness and existence are enforced by zabin-agent-tooling (`PackRegistry::load`, run by `zabctl agents validate` and zabin's `bundle_packs` test), so the zabin pin bump must land together with a zabctl that understands packs. Pruning a pack never removes assets still carried by a remaining pack.
 - Installation consumes rendered configuration and portable assets. It does not redefine role, MCP, or approval policy.
 - Diagnostics and conformance observe the same canonical contracts; they do not create a competing runtime policy.
 - Recovery code may read authoritative Zabin state and local checkpoints, but it never promotes a checkpoint over Zabin or mutates authoritative state during reconciliation.
