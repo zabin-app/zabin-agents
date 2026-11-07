@@ -578,6 +578,50 @@ error: contract: adapter collision at <dest>/opencode.json: [{"current":"<unmana
 Move a hand-authored `opencode.json` aside before installing; the installer
 never overwrites something it does not already own in the manifest.
 
+## Agent presence and inbox hooks (Claude Code)
+
+The rendered `.claude/settings.json` registers four hooks beside the
+credential preflight so every Claude Code session takes part in agent
+presence and the inbox without any agent action. Each is a short POSIX `sh`
+script around one installed `zabctl` invocation (no `jq`, no `python`, never
+`cargo`), and each is fail-open: a missing `zabctl`, a missing project marker,
+an unreachable daemon or any `zabctl` error ends the hook with exit 0 and no
+output, so a session is never blocked.
+
+| Event | What it does |
+|---|---|
+| `SessionStart` | Announces the session, prints a context block (`Zabin agent session: session_id=<ags> handle=<H> host=<hostname>. ...`) and any unread inbox messages (`zabctl inbox read`). Claude Code adds plain stdout of this event to the model's context. |
+| `SessionStart` (`asyncRewake`) | Runs in the background: `zabctl events --exit-on 'agent_message.posted:to_session_id=<ags>' --timeout 1500`. On a match it exits 2 with `new agent message - run read_inbox` on stderr, which wakes Claude; a timeout or error exits 0 silently. It is armed once per session start (and again on resume/compact); a message arriving after it lapses is picked up by the next `UserPromptSubmit`. |
+| `UserPromptSubmit` | Re-announces (the heartbeat) and runs `zabctl inbox read --mark-read`; unread messages become context, an empty inbox prints nothing. |
+| `Stop` | Re-announces with `--status idle` as the heartbeat. |
+
+Identity needs no state file. Claude Code passes the session id to every hook
+as `session_id` on stdin (there is no documented environment variable), so
+each hook derives the same handle `claude@<hostname>/<sid8>` (`<sid8>` is the
+first 8 characters of the session id) and re-announces it idempotently to
+recover the `ags_...` session id: re-announcing the same handle and host as the
+same owner converges on the live session.
+
+Inputs, none of them new renderer placeholders:
+
+- project id: read from `project_id` in `$CLAUDE_PROJECT_DIR/.zabin/project.toml`
+  (falling back to the working directory), the committed marker `zabctl project
+  init` writes. A project without the marker gets no hooks behavior.
+- `zabctl`: resolved from `PATH` (`zabctl agents install` and the release
+  installer put it there). Endpoint, TLS and token resolve through the usual
+  `zabctl` precedence chain (flags, environment, `.zabin/local.toml`,
+  `.zabin/project.toml`, `~/.zabin/zabctl.toml`).
+- host: `hostname`, which equals `zabctl`'s default `--host`.
+
+Convergence requirement: the MCP side must use the same handle **and** the same
+host as the hook. An agent that calls `announce_presence` itself must pass the
+`handle` and `host` printed in the SessionStart context block (or, with no
+block, `host` equal to the machine's `hostname` output); otherwise it opens a
+second session instead of converging on the hook's. The hook and the MCP
+session are the same owner only when both authenticate through the same
+credential kind (a loopback or file-token `zabctl` and an MCP file-token caller
+are one owner; a database-token caller is `user:<id>` on both surfaces).
+
 ## Coverage matrix
 
 | Client | Status | Rendered/installed artifacts | Verified against |

@@ -43,6 +43,7 @@ Inputs are the absolute repository path and explicit `project_id` (or permission
 3. Call `get_pickup_context` and `get_pipeline_state {project_id, detail:"summary"}` with the pinned `project_id`; reserve `detail:"full"` for phase boundaries and review synthesis (State 6), where the full gate and review detail is load-bearing. Call `list_tasks` filtered to the live statuses this run needs — `ready`, `executing`, `in_review`, `needs_rework`, `validated`, as applicable — never an unfiltered page walk through completed history. Call `list_workspaces` filtered to `active`/`idle` unless reconciling a specific gap, in which case widen the filter only as far as the gap requires.
 4. If resuming, follow [Recovery](references/recovery.md). Never invent `PHASE_BASE`, a review round, task ownership, or a merge mapping.
 5. Inspect the project documentation policy and available architecture, development, standards, and review-focus documents. Missing project docs are reported; do not hallucinate them.
+6. Establish presence. If a SessionStart context block names a Zabin agent session, use that `session_id`, handle and host as given. Otherwise call `announce_presence {project_id, handle:"<role>@<host>/<slug>", host:<the machine's `hostname` output>}` so a `zabctl` hook on the same machine converges on the same session. Then call `read_inbox {project_id, session_id}` and act on any `request`, `handoff` or `notice`. Re-announce with a fresh `status_text` at each state transition, and call `end_presence` at State 8. Presence is advisory and never blocks the pipeline: if these tools are unavailable or fail, record the gap in the State 8 report and continue. See [MCP lifecycle](references/mcp-lifecycle.md#agent-presence-and-inbox).
 
 Classify the request as feature, bug, refactor, or research-only. A truly bounded change may run inline, but an existing task still receives its normal verdict and gates.
 
@@ -199,6 +200,8 @@ A fix that is too large to remediate inline is not a cap exception: it is the ne
 Read final state from Zabin and git. Report the pinned project id, plan/board/phase ids, task counts and blockers, waves, source and merged commits, gates, latest review verdict/round, follow-up count, any inline remediation performed at the cap, deferred or `wont_fix` findings, documentation routing, and capability limitations.
 
 Never reconstruct the report from conversation memory or local Markdown.
+
+After the report is delivered, call `end_presence {project_id, session_id}` for the session established in State 0.
 
 ### Optional close-out: complete_plan
 

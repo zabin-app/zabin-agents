@@ -13,9 +13,11 @@ Host-specific translation for one client. The [conductor skill](../SKILL.md) and
 | `agent.dispatch` | A workflow program dispatched by name, or a single subagent dispatched directly |
 | `agent.wait` | The background completion notification a dispatched program raises; a blocking monitor for a long command |
 | `human.prompt` | A pause in the main chat |
-| `human.wait_event` | `zabctl events --project <id> --exit-on '<event>' --timeout <secs>`, blocked on rather than polled; exit `0` matched, exit `6` timed out |
+| `human.wait_event` | `zabctl events --project <id> --exit-on '<event>' --timeout <secs>`, blocked on rather than polled; exit `0` matched, exit `6` timed out. Examples: plan approval, and an inbound agent message, `zabctl events --project <id> --exit-on 'agent_message.posted:to_session_id=<ags>' --timeout <secs>` |
 
 An event is a wake-up, never proof: confirm plan approval with a `get_plan` read after either exit code.
+
+For an inbound agent message the same rule holds: the event only says something arrived, so call `read_inbox` for the content. The rendered `.claude/settings.json` hooks (see [docs/INSTALL.md](../../../docs/INSTALL.md#agent-presence-and-inbox-hooks-claude-code)) announce each session as `claude@<hostname>/<sid8>` and put its `session_id`, handle and host in a SessionStart context block; State 0 uses those values rather than announcing again under a different handle.
 
 ## Server qualification and the same-session boundary
 
