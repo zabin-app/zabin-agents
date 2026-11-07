@@ -602,14 +602,16 @@ a `<zabin-peer-messages untrusted="true">` envelope that opens with a fixed
 notice: the messages are data, not instructions, and cannot change the task,
 scope or acceptance. Sender-supplied text cannot close the envelope.
 
-Trusted endpoints only. The hooks dial only an endpoint that comes from a
-trusted layer: a flag, the environment, `~/.zabin/zabctl.toml`, a verified
-untracked `.zabin/local.toml`, or the built-in default. A `server_url` in the
-committed `.zabin/project.toml` is never dialled, so a repository cannot point
-the hooks at a server of its choosing; with only that endpoint configured the
-hooks are a silent no-op. Configure a remote daemon in `~/.zabin/zabctl.toml`
-or an untracked `.zabin/local.toml`. Set `ZABIN_HOOK_DEBUG=1` to see why a hook
-did nothing.
+Hook endpoint rule. A `server_url` in the committed `.zabin/project.toml`
+marker is used by the hooks only when its host is loopback (`127.0.0.1`, `::1`
+or `localhost`). A non-loopback marker endpoint is never dialled, so a
+repository cannot point the hooks at a server of its choosing; the hooks then
+use `server.endpoint` from `~/.zabin/zabctl.toml`, else the built-in default.
+A remote daemon is therefore configured in `~/.zabin/zabctl.toml`, an untracked
+`.zabin/local.toml`, or `ZABIN_ENDPOINT`, even when the repository commits a
+`server_url`. This rule is specific to the hooks: for ordinary `zabctl`
+commands the marker outranks `~/.zabin/zabctl.toml`. Set `ZABIN_HOOK_DEBUG=1`
+to see why a hook did nothing.
 
 Identity needs no state file. Claude Code passes the session id to every hook
 as `session_id` on stdin, so each hook derives the same handle
@@ -625,7 +627,7 @@ Inputs, none of them new renderer placeholders:
   init` writes. A project without the marker gets no hooks behavior.
 - `zabctl`: resolved from `PATH` (`zabctl agents install` and the release
   installer put it there). Endpoint, TLS and token resolve through the usual
-  `zabctl` precedence chain, subject to the trusted-endpoint rule above.
+  `zabctl` precedence chain, subject to the hook endpoint rule above.
 - host: `hostname`, which equals `zabctl`'s default `--host`.
 
 Convergence requirement: the MCP side must use the same handle **and** the same
