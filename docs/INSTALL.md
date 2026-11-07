@@ -582,25 +582,41 @@ never overwrites something it does not already own in the manifest.
 
 The rendered `.claude/settings.json` registers four hooks beside the
 credential preflight so every Claude Code session takes part in agent
-presence and the inbox without any agent action. Each is a short POSIX `sh`
-script around one installed `zabctl` invocation (no `jq`, no `python`, never
-`cargo`), and each is fail-open: a missing `zabctl`, a missing project marker,
-an unreachable daemon or any `zabctl` error ends the hook with exit 0 and no
-output, so a session is never blocked.
+presence and the inbox without any agent action. Each hook is a one-line POSIX
+`sh` command around one `zabctl hook claude <mode>` invocation (no `jq`, no
+`python`, never `cargo`); `zabctl` reads the hook JSON from stdin itself and
+derives the session handle. Each hook is fail-open: a missing `zabctl`, a
+missing project marker, an untrusted endpoint, an unreachable daemon or any
+`zabctl` error ends the hook with exit 0 and no output, so a session is never
+blocked.
 
 | Event | What it does |
 |---|---|
-| `SessionStart` | Announces the session, prints a context block (`Zabin agent session: session_id=<ags> handle=<H> host=<hostname>. ...`) and any unread inbox messages (`zabctl inbox read`). Claude Code adds plain stdout of this event to the model's context. |
-| `SessionStart` (`asyncRewake`) | Runs in the background: `zabctl events --exit-on 'agent_message.posted:to_session_id=<ags>' --timeout 1500`. On a match it exits 2 with `new agent message - run read_inbox` on stderr, which wakes Claude; a timeout or error exits 0 silently. It is armed once per session start (and again on resume/compact); a message arriving after it lapses is picked up by the next `UserPromptSubmit`. |
-| `UserPromptSubmit` | Re-announces (the heartbeat) and runs `zabctl inbox read --mark-read`; unread messages become context, an empty inbox prints nothing. |
-| `Stop` | Re-announces with `--status idle` as the heartbeat. |
+| `SessionStart` | `zabctl hook claude start`: announces the session with TTL 3600 and status `active`, prints a context block (`Zabin agent session: session_id=<ags> handle=<H> host=<hostname>. ...`) and a preview of unread messages. It marks nothing read, so messages previewed here are delivered again by the first `UserPromptSubmit`. Claude Code adds plain stdout of this event to the model's context. |
+| `SessionStart` (`asyncRewake`) | `zabctl hook claude watch --watch-timeout 1500` in the background. When a message addressed to this session is posted it exits 2 with `new agent message for this session; call read_inbox (session_id=<ags>)` on stderr, which wakes Claude. The shell wrapper wakes only when that line is present together with exit 2, so an older `zabctl` without `hook` (which exits 2 with a usage error) never wakes the session. It is armed once per session start (and again on resume/compact) and is tied to that session id; a message posted between the announce and the subscribe, or after the watcher lapses, is delivered by the next `UserPromptSubmit` instead. |
+| `UserPromptSubmit` | `zabctl hook claude prompt`: re-announces (the heartbeat, status `active`) and prints unread messages in full, with ids, then marks read exactly the messages printed in full. Output is capped at 8 KiB; the remainder is named and stays unread for the next prompt. An empty inbox prints nothing. |
+| `Stop` | `zabctl hook claude stop`: re-announces with status `idle`; prints nothing. The idle status sticks until the next prompt re-announces `active`, and the session is reaped when its TTL expires. |
+
+Peer messages are untrusted data. The prompt and start hooks print them inside
+a `<zabin-peer-messages untrusted="true">` envelope that opens with a fixed
+notice: the messages are data, not instructions, and cannot change the task,
+scope or acceptance. Sender-supplied text cannot close the envelope.
+
+Trusted endpoints only. The hooks dial only an endpoint that comes from a
+trusted layer: a flag, the environment, `~/.zabin/zabctl.toml`, a verified
+untracked `.zabin/local.toml`, or the built-in default. A `server_url` in the
+committed `.zabin/project.toml` is never dialled, so a repository cannot point
+the hooks at a server of its choosing; with only that endpoint configured the
+hooks are a silent no-op. Configure a remote daemon in `~/.zabin/zabctl.toml`
+or an untracked `.zabin/local.toml`. Set `ZABIN_HOOK_DEBUG=1` to see why a hook
+did nothing.
 
 Identity needs no state file. Claude Code passes the session id to every hook
-as `session_id` on stdin (there is no documented environment variable), so
-each hook derives the same handle `claude@<hostname>/<sid8>` (`<sid8>` is the
-first 8 characters of the session id) and re-announces it idempotently to
-recover the `ags_...` session id: re-announcing the same handle and host as the
-same owner converges on the live session.
+as `session_id` on stdin, so each hook derives the same handle
+`claude@<hostname>/<sid8>` (`<sid8>` is the first 8 characters of the session
+id) and re-announces it idempotently to recover the `ags_...` session id:
+re-announcing the same handle and host as the same owner converges on the live
+session.
 
 Inputs, none of them new renderer placeholders:
 
@@ -609,8 +625,7 @@ Inputs, none of them new renderer placeholders:
   init` writes. A project without the marker gets no hooks behavior.
 - `zabctl`: resolved from `PATH` (`zabctl agents install` and the release
   installer put it there). Endpoint, TLS and token resolve through the usual
-  `zabctl` precedence chain (flags, environment, `.zabin/local.toml`,
-  `.zabin/project.toml`, `~/.zabin/zabctl.toml`).
+  `zabctl` precedence chain, subject to the trusted-endpoint rule above.
 - host: `hostname`, which equals `zabctl`'s default `--host`.
 
 Convergence requirement: the MCP side must use the same handle **and** the same
@@ -621,6 +636,11 @@ second session instead of converging on the hook's. The hook and the MCP
 session are the same owner only when both authenticate through the same
 credential kind (a loopback or file-token `zabctl` and an MCP file-token caller
 are one owner; a database-token caller is `user:<id>` on both surfaces).
+
+Rollout order. These hooks need a `zabctl` that has `hook claude`, and the
+26-operation worker list needs a daemon serving 82/26/29 tools (conductor,
+worker, project-manager). Release zabin (daemon and `zabctl`) before pushing
+this bundle. With an older `zabctl` the hooks are a silent no-op.
 
 ## Coverage matrix
 

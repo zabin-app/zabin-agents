@@ -8,12 +8,12 @@
             "type": "command"
           },
           {
-            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; IN=$(cat); SID=$(printf '%s' \"$IN\" | grep -o '\"session_id\" *: *\"[^\"]*\"' | head -n1 | sed 's/.*: *\"\\(.*\\)\"/\\1/' | tr -cd 'A-Za-z0-9-' | cut -c1-8); P=$(sed -n 's/^project_id *= *\"\\([^\"]*\\)\".*/\\1/p' \"${CLAUDE_PROJECT_DIR:-.}/.zabin/project.toml\" 2>/dev/null | head -n1); [ -n \"$SID\" ] && [ -n \"$P\" ] || exit 0; HN=$(hostname 2>/dev/null || uname -n); H=\"claude@$HN/$SID\"; S=$(zabctl presence announce --project \"$P\" --handle \"$H\"  2>/dev/null) || exit 0; [ -n \"$S\" ] || exit 0; printf 'Zabin agent session: session_id=%s handle=%s host=%s. Use this session_id for read_inbox/send_agent_message/end_presence; if you call announce_presence, pass exactly this handle and host.\\n' \"$S\" \"$H\" \"$HN\"; zabctl inbox read --project \"$P\" --session \"$S\" 2>/dev/null || true; exit 0",
+            "command": "command -v zabctl >/dev/null 2>&1 && zabctl hook claude start 2>/dev/null; exit 0",
             "type": "command",
             "timeout": 10
           },
           {
-            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; IN=$(cat); SID=$(printf '%s' \"$IN\" | grep -o '\"session_id\" *: *\"[^\"]*\"' | head -n1 | sed 's/.*: *\"\\(.*\\)\"/\\1/' | tr -cd 'A-Za-z0-9-' | cut -c1-8); P=$(sed -n 's/^project_id *= *\"\\([^\"]*\\)\".*/\\1/p' \"${CLAUDE_PROJECT_DIR:-.}/.zabin/project.toml\" 2>/dev/null | head -n1); [ -n \"$SID\" ] && [ -n \"$P\" ] || exit 0; HN=$(hostname 2>/dev/null || uname -n); H=\"claude@$HN/$SID\"; S=$(zabctl presence announce --project \"$P\" --handle \"$H\"  2>/dev/null) || exit 0; [ -n \"$S\" ] || exit 0; zabctl events --project \"$P\" --exit-on \"agent_message.posted:to_session_id=$S\" --timeout 1500 >/dev/null 2>&1 && { echo 'new agent message - run read_inbox' >&2; exit 2; }; exit 0",
+            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; W=$(zabctl hook claude watch --watch-timeout 1500 2>&1 >/dev/null); rc=$?; case \"$W\" in 'new agent message'*) if [ \"$rc\" -eq 2 ]; then printf '%s\\n' \"$W\" >&2; exit 2; fi;; esac; exit 0",
             "type": "command",
             "asyncRewake": true,
             "timeout": 1600
@@ -25,7 +25,7 @@
       {
         "hooks": [
           {
-            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; IN=$(cat); SID=$(printf '%s' \"$IN\" | grep -o '\"session_id\" *: *\"[^\"]*\"' | head -n1 | sed 's/.*: *\"\\(.*\\)\"/\\1/' | tr -cd 'A-Za-z0-9-' | cut -c1-8); P=$(sed -n 's/^project_id *= *\"\\([^\"]*\\)\".*/\\1/p' \"${CLAUDE_PROJECT_DIR:-.}/.zabin/project.toml\" 2>/dev/null | head -n1); [ -n \"$SID\" ] && [ -n \"$P\" ] || exit 0; HN=$(hostname 2>/dev/null || uname -n); H=\"claude@$HN/$SID\"; S=$(zabctl presence announce --project \"$P\" --handle \"$H\" --status idle 2>/dev/null) || exit 0; [ -n \"$S\" ] || exit 0; exit 0",
+            "command": "command -v zabctl >/dev/null 2>&1 && zabctl hook claude stop 2>/dev/null; exit 0",
             "type": "command",
             "timeout": 10
           }
@@ -36,7 +36,7 @@
       {
         "hooks": [
           {
-            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; IN=$(cat); SID=$(printf '%s' \"$IN\" | grep -o '\"session_id\" *: *\"[^\"]*\"' | head -n1 | sed 's/.*: *\"\\(.*\\)\"/\\1/' | tr -cd 'A-Za-z0-9-' | cut -c1-8); P=$(sed -n 's/^project_id *= *\"\\([^\"]*\\)\".*/\\1/p' \"${CLAUDE_PROJECT_DIR:-.}/.zabin/project.toml\" 2>/dev/null | head -n1); [ -n \"$SID\" ] && [ -n \"$P\" ] || exit 0; HN=$(hostname 2>/dev/null || uname -n); H=\"claude@$HN/$SID\"; S=$(zabctl presence announce --project \"$P\" --handle \"$H\"  2>/dev/null) || exit 0; [ -n \"$S\" ] || exit 0; zabctl inbox read --project \"$P\" --session \"$S\" --mark-read 2>/dev/null || true; exit 0",
+            "command": "command -v zabctl >/dev/null 2>&1 && zabctl hook claude prompt 2>/dev/null; exit 0",
             "type": "command",
             "timeout": 10
           }
