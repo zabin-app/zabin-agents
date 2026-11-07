@@ -50,7 +50,7 @@ Five tools, served on both surfaces, let every participant announce itself and e
 
 Identity and ownership:
 
-- A session is identified by `(project, host, handle, owner)`. Announcing the same handle and host as the same owner converges on the live session (same `session_id`, `created: false`), so repeated announces are heartbeats.
+- A session is identified by `(project, host, handle, owner)`. Announcing the same handle and host as the same owner converges on the live session (same `session_id`, `created: false`), so repeated announces are heartbeats. When re-announcing a session reused from the SessionStart hook, pass `ttl_secs: 3600` (the MCP default of 600 would shrink the hook session). If any announce returns `created: true` with a new `session_id`, adopt the new id for every later `read_inbox`, `send_agent_message` and `end_presence` call. The hooks overwrite `status_text` on each prompt and stop (`active` or `idle`), so `status_text` is a hint, not durable state.
 - A zabctl hook and the agent's MCP session converge only when they use the same handle **and** the same host; use the machine's `hostname` output as `host`. A loopback or file-token `zabctl` caller and a file-token MCP caller are the same owner; a database-token caller is `user:<id>` on both surfaces.
 - Any project caller may read any inbox without marking (`mark_read` unset). Only the owner may `end_presence`, send from a session, or `mark_read` through it: a non-owner gets `NotFound`. Announcing over another owner's live handle and host is a `Conflict`; choose a different handle rather than retrying.
 - Every file-token holder and every loopback `zabctl` caller share the single owner `cred:file-token`, so a handle or `from_handle` proves nothing about role or identity.
