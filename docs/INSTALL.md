@@ -607,11 +607,13 @@ marker is used by the hooks only when its host is loopback (`127.0.0.1`, `::1`
 or `localhost`). A non-loopback marker endpoint is never dialled, so a
 repository cannot point the hooks at a server of its choosing; the hooks then
 use `server.endpoint` from `~/.zabin/zabctl.toml`, else the built-in default.
-A remote daemon is therefore configured in `~/.zabin/zabctl.toml`, an untracked
-`.zabin/local.toml`, or `ZABIN_ENDPOINT`, even when the repository commits a
-`server_url`. This rule is specific to the hooks: for ordinary `zabctl`
-commands the marker outranks `~/.zabin/zabctl.toml`. Set `ZABIN_HOOK_DEBUG=1`
-to see why a hook did nothing.
+A loopback marker still outranks `~/.zabin/zabctl.toml`, exactly as it does for
+ordinary `zabctl` commands. So on a machine whose daemon is remote (for example a
+laptop reaching the daemon over an overlay), set `server_url` in the project's
+untracked `.zabin/local.toml`, or export `ZABIN_ENDPOINT`; either outranks a
+committed loopback `server_url`. `~/.zabin/zabctl.toml` alone is enough only when
+the repository commits no `server_url`, or a non-loopback one. Set
+`ZABIN_HOOK_DEBUG=1` to see why a hook did nothing.
 
 Identity needs no state file. Claude Code passes the session id to every hook
 as `session_id` on stdin, so each hook derives the same handle
