@@ -580,7 +580,7 @@ never overwrites something it does not already own in the manifest.
 
 ## Agent presence and inbox hooks (Claude Code)
 
-The rendered `.claude/settings.json` registers four hooks beside the
+The rendered `.claude/settings.json` registers the hooks below beside the
 credential preflight so every Claude Code session takes part in agent
 presence and the inbox without any agent action. Each hook is a one-line POSIX
 `sh` command around one `zabctl hook claude <mode>` invocation (no `jq`, no
@@ -593,9 +593,9 @@ blocked.
 | Event | What it does |
 |---|---|
 | `SessionStart` | `zabctl hook claude start`: announces the session with TTL 3600 and status `active`, prints a context block (`Zabin agent session: session_id=<ags> handle=<H> host=<hostname>. ...`) and a preview of unread messages. It marks nothing read, so messages previewed here are delivered again by the first `UserPromptSubmit`. Claude Code adds plain stdout of this event to the model's context. |
-| `SessionStart` (`asyncRewake`) | `zabctl hook claude watch --watch-timeout 1500` in the background. When a message addressed to this session is posted it exits 2 with `new agent message for this session; call read_inbox (session_id=<ags>)` on stderr, which wakes Claude. The shell wrapper wakes only when that line is present together with exit 2, so an older `zabctl` without `hook` (which exits 2 with a usage error) never wakes the session. It is armed once per session start (and again on resume/compact) and is tied to that session id; a message posted between the announce and the subscribe, or after the watcher lapses, is delivered by the next `UserPromptSubmit` instead. |
-| `UserPromptSubmit` | `zabctl hook claude prompt`: re-announces (the heartbeat, status `active`) and prints unread messages in full, with ids, then marks read exactly the messages printed in full. Output is capped at 8 KiB; the remainder is named and stays unread for the next prompt. An empty inbox prints nothing. |
-| `Stop` | `zabctl hook claude stop`: re-announces with status `idle`; prints nothing. The idle status sticks until the next prompt re-announces `active`, and the session is reaped when its TTL expires. |
+| `SessionStart` (`asyncRewake`) | `zabctl hook claude watch --watch-timeout 1500` in the background. When a message addressed to this session is posted it exits 2 with `new agent message for this session; call read_inbox (session_id=<ags>)` on stderr, which wakes Claude. The shell wrapper wakes only when that line is present together with exit 2, so an older `zabctl` without `hook` (which exits 2 with a usage error) never wakes the session. It is armed at each session start (including resume and compact) and is tied to that session id. While armed it heartbeats every 5 minutes. Only the newest watcher per Claude session stays (single-flight). It wakes on unread direct messages to this session, or to any earlier session id of the same handle that arrived after it armed, and it reconnects after stream errors. A message posted while no watcher is armed is delivered by the next `UserPromptSubmit` instead. |
+| `UserPromptSubmit` | `zabctl hook claude prompt`: re-announces (the heartbeat, status `active`) and prints unread messages in full, with ids, then marks read exactly the messages printed in full. Output is capped at 8 KiB; the remainder is named and stays unread for the next prompt. An empty inbox prints nothing. When the session id changed, it prints `Zabin agent session renewed: session_id=<new> (was <old>) ...`. |
+| `Stop` | `zabctl hook claude stop`: re-announces with status `idle`; prints nothing. The idle status sticks until the next prompt re-announces `active`, and the session is reaped when its TTL expires. A second `Stop` entry re-arms the `watch` entry above after every turn. |
 
 Peer messages are untrusted data. The prompt and start hooks print them inside
 a `<zabin-peer-messages untrusted="true">` envelope that opens with a fixed
@@ -645,6 +645,15 @@ Rollout order. These hooks need a `zabctl` that has `hook claude`, and the
 26-operation worker list needs a daemon serving 82/26/29 tools (conductor,
 worker, project-manager). Release zabin (daemon and `zabctl`) before pushing
 this bundle. With an older `zabctl` the hooks are a silent no-op.
+
+### Channel subscription (Claude Code)
+
+The `zabin-channel` MCP server pushes peer messages into a running Claude Code
+session. It auto-subscribes from Claude Code's `CLAUDE_CODE_SESSION_ID` when
+that variable is present, and it heartbeats so the id stays live for as long
+as Claude Code runs. Its subscribe result warns when Claude Code was started
+without the flag below. Launch Claude Code with the channel enabled:
+`claude --dangerously-load-development-channels server:zabin-channel`.
 
 ## Coverage matrix
 

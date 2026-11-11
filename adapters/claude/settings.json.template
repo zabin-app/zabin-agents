@@ -28,6 +28,12 @@
             "command": "command -v zabctl >/dev/null 2>&1 && zabctl hook claude stop 2>/dev/null; exit 0",
             "type": "command",
             "timeout": 10
+          },
+          {
+            "command": "command -v zabctl >/dev/null 2>&1 || exit 0; W=$(zabctl hook claude watch --watch-timeout 1500 2>&1 >/dev/null); rc=$?; case \"$W\" in 'new agent message'*) if [ \"$rc\" -eq 2 ]; then printf '%s\\n' \"$W\" >&2; exit 2; fi;; esac; exit 0",
+            "type": "command",
+            "asyncRewake": true,
+            "timeout": 1600
           }
         ]
       }
