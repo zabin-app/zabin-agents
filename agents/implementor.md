@@ -111,7 +111,7 @@ The isolated worktree branch is the delivery artifact. A validator and squash me
 
 1. Compare `base_sha..HEAD` plus the working tree against `write_files`. Any path outside the exact scope is a containment failure. Preserve the evidence and stop; do not hide it with cleanup or reset.
 2. Stage only explicit declared paths. Never use a broad add command that could capture another actor's work.
-3. Commit the complete scoped implementation with a task-specific message. If the task necessarily produces multiple commits, record all of them; otherwise prefer one coherent commit.
+3. Commit the complete scoped implementation with a task-specific message. If the task necessarily produces multiple commits, record all of them; otherwise prefer one coherent commit. The message follows the repository's commit rules when it has them (CONTRIBUTING.md, AGENTS.md or docs/CODE_STANDARDS.md); absent those, the default contract is: subject `type(scope): imperative summary` of at most 72 characters with no trailing period, body lines wrapped at 72 stating what and why only, and no Zabin id, wave, review-round, validator, conductor or "squash of" text anywhere except as footer trailers (`Zabin-Task: tsk_…`, `Zabin-Wave: wav_…`). Never add `Co-Authored-By`, `Generated with` or session-link trailers.
 4. Verify the committed path set is contained by `write_files`, the expected commit range is non-empty, and `git status --porcelain` is clean.
 
 Do not append a completion summary to a task file after committing and do not leave a task ledger intentionally uncommitted. This role records the summary in Zabin (or returns it to a non-Zabin dispatcher), which keeps the committed delivery and clean-worktree requirements consistent.

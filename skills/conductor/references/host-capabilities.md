@@ -91,6 +91,10 @@ Workers may edit and commit only inside their assigned worktree. Validators, rev
 
 Never use cleanup, reset, checkout, or deletion to hide unexpected state. Preserve evidence and pause when containment cannot be established.
 
+### Commit messages written by the main loop
+
+A squash commit, a delta-pass commit or an inline fix written by the main loop follows the repository's commit rules when it has them (CONTRIBUTING.md, AGENTS.md, docs/CODE_STANDARDS.md); absent those, the default contract applies: subject `type(scope): imperative summary` of at most 72 characters with no trailing period and no em dash continuation; body wrapped at 72, what and why only, under 20 lines; Zabin ids, wave numbers, review rounds, validator verdicts, "conductor" and "squash of" appear only as footer trailers (`Zabin-Task:`, `Zabin-Wave:`, `Zabin-Review:`, `Zabin-Plan:`); no attribution or session-link trailers. The task summary in Zabin, not the commit message, carries the review and validator narrative. A PR body follows the repository's PR template when one exists and is otherwise What and why / How it was tested / Linked work, under 60 lines; the phase report belongs in Zabin.
+
 ## Waiting and progress
 
 Use host monitoring for long-running agents, verification commands, and approval events. Do not busy-poll. While a worker runs, it posts task-scoped progress to Zabin and renews before silent long stages. The main loop may also report phase-level progress through the available human channel, but it must not impersonate a worker's task narration.
